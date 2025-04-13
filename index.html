@@ -1,114 +1,130 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Hartmann Grid - Real-Time Map</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
-    <style>
-        html, body, #map { height: 100%; margin: 0; padding: 0; }
-        #notice {
-            position: absolute;
-            top: 10px; left: 50%;
-            transform: translateX(-50%);
-            background: #fff;
-            padding: 10px 15px;
-            z-index: 999;
-            border-radius: 8px;
-            font-family: sans-serif;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hartmann Grid - Real-Time Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
+  <style>
+    html, body, #map { height: 100%; margin: 0; padding: 0; }
+    #controls {
+      position: absolute;
+      top: 10px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 999;
+      background: white;
+      padding: 8px 12px;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-family: sans-serif;
+    }
+    button {
+      padding: 6px 10px;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
+      background: #007bff;
+      color: white;
+      border-radius: 5px;
+    }
+  </style>
 </head>
 <body>
-    <div id="notice">📍 Allow location access for real-time tracking.</div>
-    <div id="map"></div>
+  <div id="controls">
+    <button onclick="askLocation()">📍 Get My Location</button>
+  </div>
+  <div id="map"></div>
 
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script>
-        const map = L.map('map', {
-            center: [36.709639, 3.164972],
-            zoom: 19,
-            maxZoom: 22,
-            minZoom: 2
-        });
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map', {
+      center: [36.709639, 3.164972],
+      zoom: 19,
+      maxZoom: 22,
+      minZoom: 2
+    });
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap, &copy; CartoDB',
-            maxZoom: 22
-        }).addTo(map);
+    // Light map tiles with great zoom (no satellite)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap & CartoDB',
+      maxZoom: 22
+    }).addTo(map);
 
-        const refLat = 36.709639;
-        const refLon = 3.164972;
-        const meterToDegreeLat = 1 / 111320;
+    const refLat = 36.709639;
+    const refLon = 3.164972;
+    const meterToDegreeLat = 1 / 111320;
 
-        function getMeterToDegreeLon(lat) {
-            return 1 / (111320 * Math.cos(lat * Math.PI / 180));
-        }
+    function getMeterToDegreeLon(lat) {
+      return 1 / (111320 * Math.cos(lat * Math.PI / 180));
+    }
 
-        const gridLayer = L.layerGroup().addTo(map);
-        function drawGrid() {
-            gridLayer.clearLayers();
-            const bounds = map.getBounds();
-            const latMin = bounds.getSouth();
-            const latMax = bounds.getNorth();
-            const lonMin = bounds.getWest();
-            const lonMax = bounds.getEast();
-            const spacingLat = 2 * meterToDegreeLat;
-            const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
-            for (let lat = refLat; lat < latMax; lat += spacingLat)
-                L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-            for (let lat = refLat; lat > latMin; lat -= spacingLat)
-                L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-            for (let lon = refLon; lon < lonMax; lon += spacingLon)
-                L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-            for (let lon = refLon; lon > lonMin; lon -= spacingLon)
-                L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-        }
+    const gridLayer = L.layerGroup().addTo(map);
 
-        function updateGrid() {
-            if (map.getZoom() >= 17) drawGrid();
-            else gridLayer.clearLayers();
-        }
+    function drawGrid() {
+      gridLayer.clearLayers();
+      const bounds = map.getBounds();
+      const latMin = bounds.getSouth();
+      const latMax = bounds.getNorth();
+      const lonMin = bounds.getWest();
+      const lonMax = bounds.getEast();
+      const spacingLat = 2 * meterToDegreeLat;
+      const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
 
-        map.on('moveend zoomend', updateGrid);
-        updateGrid();
+      for (let lat = refLat; lat < latMax; lat += spacingLat)
+        L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+      for (let lat = refLat; lat > latMin; lat -= spacingLat)
+        L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+      for (let lon = refLon; lon < lonMax; lon += spacingLon)
+        L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+      for (let lon = refLon; lon > lonMin; lon -= spacingLon)
+        L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+    }
 
-        // Real-time user tracking
-        let userMarker = L.marker([0, 0]).addTo(map).bindPopup("Locating...");
-        let userCircle = null;
+    function updateGrid() {
+      if (map.getZoom() >= 17) drawGrid();
+      else gridLayer.clearLayers();
+    }
 
-        // Request geolocation immediately on load
-        window.addEventListener('load', () => {
-            if (navigator.geolocation) {
-                navigator.geolocation.watchPosition(position => {
-                    const lat = position.coords.latitude;
-                    const lon = position.coords.longitude;
+    map.on('moveend zoomend', updateGrid);
+    updateGrid();
 
-                    userMarker.setLatLng([lat, lon]);
-                    userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+    let userMarker = L.marker([0, 0]).addTo(map).bindPopup("📍 Your location");
+    let userCircle = null;
 
-                    if (userCircle) map.removeLayer(userCircle);
-                    userCircle = L.circle([lat, lon], {
-                        radius: position.coords.accuracy,
-                        color: '#3388ff',
-                        fillColor: '#3388ff',
-                        fillOpacity: 0.2
-                    }).addTo(map);
+    function askLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
 
-                    map.setView([lat, lon], map.getZoom());
-                    document.getElementById('notice').style.display = 'none';
-                }, error => {
-                    alert("Location error: " + error.message);
-                }, {
-                    enableHighAccuracy: true,
-                    maximumAge: 1000,
-                    timeout: 10000
-                });
-            } else {
-                alert("Geolocation is not supported on this device.");
-            }
-        });
-    </script>
+            userMarker.setLatLng([lat, lon]);
+            userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+            userMarker.openPopup();
+
+            if (userCircle) map.removeLayer(userCircle);
+            userCircle = L.circle([lat, lon], {
+              radius: position.coords.accuracy,
+              color: '#3388ff',
+              fillColor: '#3388ff',
+              fillOpacity: 0.2
+            }).addTo(map);
+
+            map.setView([lat, lon], map.getZoom());
+          },
+          (err) => {
+            alert("Error getting location: " + err.message);
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 1000,
+            timeout: 10000
+          }
+        );
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
+    }
+  </script>
 </body>
 </html>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Hartmann Grid - Real-Time Map</title>
+  <title>Optimized Hartmann Grid</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; }
@@ -44,7 +44,7 @@
       minZoom: 2
     });
 
-    // Light map tiles with great zoom (no satellite)
+    // Light map tiles
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; OpenStreetMap & CartoDB',
       maxZoom: 22
@@ -62,31 +62,53 @@
 
     function drawGrid() {
       gridLayer.clearLayers();
+
+      const zoom = map.getZoom();
+      if (zoom < 17) return;
+
       const bounds = map.getBounds();
       const latMin = bounds.getSouth();
       const latMax = bounds.getNorth();
       const lonMin = bounds.getWest();
       const lonMax = bounds.getEast();
+
       const spacingLat = 2 * meterToDegreeLat;
       const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
 
-      for (let lat = refLat; lat < latMax; lat += spacingLat)
-        L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-      for (let lat = refLat; lat > latMin; lat -= spacingLat)
-        L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-      for (let lon = refLon; lon < lonMax; lon += spacingLon)
-        L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-      for (let lon = refLon; lon > lonMin; lon -= spacingLon)
-        L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+      for (let lat = refLat; lat < latMax; lat += spacingLat) {
+        if (lat > latMin) {
+          L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+      }
+
+      for (let lat = refLat; lat > latMin; lat -= spacingLat) {
+        if (lat < latMax) {
+          L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+      }
+
+      for (let lon = refLon; lon < lonMax; lon += spacingLon) {
+        if (lon > lonMin) {
+          L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+      }
+
+      for (let lon = refLon; lon > lonMin; lon -= spacingLon) {
+        if (lon < lonMax) {
+          L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+      }
     }
 
-    function updateGrid() {
-      if (map.getZoom() >= 17) drawGrid();
-      else gridLayer.clearLayers();
+    // Throttle redraw
+    let gridTimeout;
+    function scheduleGridRedraw() {
+      if (gridTimeout) clearTimeout(gridTimeout);
+      gridTimeout = setTimeout(drawGrid, 300); // wait 300ms after move/zoom
     }
 
-    map.on('moveend zoomend', updateGrid);
-    updateGrid();
+    map.on('moveend zoomend', scheduleGridRedraw);
+    scheduleGridRedraw();
 
     let userMarker = L.marker([0, 0]).addTo(map).bindPopup("📍 Your location");
     let userCircle = null;
@@ -110,14 +132,15 @@
               fillOpacity: 0.2
             }).addTo(map);
 
-            map.setView([lat, lon], map.getZoom());
+            // Center only once or on request (not continuously)
+            // map.setView([lat, lon], map.getZoom());
           },
           (err) => {
             alert("Error getting location: " + err.message);
           },
           {
             enableHighAccuracy: true,
-            maximumAge: 1000,
+            maximumAge: 5000,
             timeout: 10000
           }
         );

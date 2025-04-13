@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hartmann Grid - Real-Time Position</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        html, body, #map { height: 100%; margin: 0; padding: 0; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+    <script>
+        const map = L.map('map', {
+            center: [36.709639, 3.164972],
+            zoom: 19,
+            maxZoom: 22,
+            minZoom: 2
+        });
+
+        // CartoDB basemap (non-satellite, high zoom)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; OpenStreetMap, &copy; CartoDB',
+            maxZoom: 22
+        }).addTo(map);
+
+        // Hartmann grid setup
+        const refLat = 36.709639;
+        const refLon = 3.164972;
+        const meterToDegreeLat = 1 / 111320;
+
+        function getMeterToDegreeLon(lat) {
+            return 1 / (111320 * Math.cos(lat * Math.PI / 180));
+        }
+
+        const gridLayer = L.layerGroup().addTo(map);
+
+        function drawGrid() {
+            gridLayer.clearLayers();
+
+            const bounds = map.getBounds();
+            const latMin = bounds.getSouth();
+            const latMax = bounds.getNorth();
+            const lonMin = bounds.getWest();
+            const lonMax = bounds.getEast();
+
+            const spacingLat = 2 * meterToDegreeLat;
+            const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
+
+            for (let lat = refLat; lat < latMax; lat += spacingLat)
+                L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+            for (let lat = refLat; lat > latMin; lat -= spacingLat)
+                L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+            for (let lon = refLon; lon < lonMax; lon += spacingLon)
+                L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+            for (let lon = refLon; lon > lonMin; lon -= spacingLon)
+                L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+
+        function updateGrid() {
+            if (map.getZoom() >= 17) drawGrid();
+            else gridLayer.clearLayers();
+        }
+
+        map.on('moveend zoomend', updateGrid);
+        updateGrid();
+
+        // Real-time user tracking
+        let userMarker = L.marker([0, 0]).addTo(map).bindPopup("Locating...");
+        let userCircle = null;
+
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(position => {
+                const lat = position.coords.latitude;
+                const lon = position.coords.longitude;
+
+                userMarker.setLatLng([lat, lon]);
+                userMarker.setPopupContent(`Your location: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+
+                // Draw accuracy circle
+                if (userCircle) map.removeLayer(userCircle);
+                userCircle = L.circle([lat, lon], {
+                    radius: position.coords.accuracy,
+                    color: '#3388ff',
+                    fillColor: '#3388ff',
+                    fillOpacity: 0.2
+                }).addTo(map);
+
+                map.setView([lat, lon]); // Center map on user every time they move
+            }, error => {
+                console.error("Geolocation error:", error.message);
+            }, {
+                enableHighAccuracy: true,
+                maximumAge: 1000,
+                timeout: 10000
+            });
+        } else {
+            alert("Geolocation is not supported by your browser.");
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Accurate Hartmann Grid</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    #refresh-btn {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      z-index: 1000;
+      padding: 8px 12px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.2);
+      font-weight: bold;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div id="refresh-btn" onclick="manualRefresh()">📍 Refresh Location</div>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script>
+  const map = L.map('map').setView([36.7096, 3.164], 20);
+
+  // Esri base map with best zoom
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{x}/{y}', {
+    maxZoom: 22,
+    attribution: 'Tiles © Esri'
+  }).addTo(map);
+
+  // Marker and circle
+  let userMarker = L.marker([0, 0]).addTo(map);
+  let accuracyCircle = L.circle([0, 0], { radius: 1 }).addTo(map);
+  let recentPositions = [];
+
+  function updateLocation(position) {
+    const lat = position.coords.latitude;
+    const lon = position.coords.longitude;
+    const acc = position.coords.accuracy;
+
+    if (acc > 5) {
+      console.log("Skipping inaccurate reading:", acc, "m");
+      return;
+    }
+
+    recentPositions.push({ lat, lon });
+    if (recentPositions.length > 5) recentPositions.shift();
+
+    const avgLat = recentPositions.reduce((s, p) => s + p.lat, 0) / recentPositions.length;
+    const avgLon = recentPositions.reduce((s, p) => s + p.lon, 0) / recentPositions.length;
+
+    userMarker.setLatLng([avgLat, avgLon]).bindPopup(`You are here (±${Math.round(acc)}m)`).openPopup();
+    accuracyCircle.setLatLng([avgLat, avgLon]).setRadius(acc);
+    map.setView([avgLat, avgLon]);
+  }
+
+  function locationError(err) {
+    alert("Location error: " + err.message + "\nPlease enable GPS or set location to 'High accuracy' mode.");
+  }
+
+  function manualRefresh() {
+    navigator.geolocation.getCurrentPosition(updateLocation, locationError, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    });
+  }
+
+  // Real-time tracking with GPS
+  navigator.geolocation.watchPosition(updateLocation, locationError, {
+    enableHighAccuracy: true,
+    timeout: 10000,
+    maximumAge: 0
+  });
+
+  alert("📱 For best accuracy, please enable GPS or set your location mode to 'High Accuracy'.");
+</script>
+</body>
+</html>

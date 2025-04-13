@@ -45,12 +45,11 @@
     const lon = position.coords.longitude;
     const acc = position.coords.accuracy;
 
-    if (acc > 5) {
+    if (acc > 30) {
       console.log("Ignored low-accuracy reading:", acc);
       return;
     }
 
-    // Store accurate readings for averaging
     recentPositions.push({ lat, lon });
     if (recentPositions.length > 5) recentPositions.shift();
 
@@ -63,10 +62,15 @@
   }
 
   function locationError(err) {
-    alert("Location error: " + err.message + "\nPlease enable GPS or allow location access.");
+    console.error("Geolocation Error", err);
+    alert("📍 Location access failed.\n\nMake sure:\n- You allowed location permission\n- GPS is ON\n- You're using HTTPS\n\nError: " + err.message);
   }
 
   function manualRefresh() {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser.");
+      return;
+    }
     navigator.geolocation.getCurrentPosition(updateLocation, locationError, {
       enableHighAccuracy: true,
       timeout: 10000,
@@ -74,14 +78,18 @@
     });
   }
 
-  // Watch user in real time
-  navigator.geolocation.watchPosition(updateLocation, locationError, {
-    enableHighAccuracy: true,
-    timeout: 10000,
-    maximumAge: 0
-  });
+  // Watch position
+  if (navigator.geolocation) {
+    navigator.geolocation.watchPosition(updateLocation, locationError, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0
+    });
+  } else {
+    alert("Geolocation is not supported by your browser.");
+  }
 
-  alert("📱 Please enable location services and set GPS to 'High Accuracy' for best results.");
+  alert("📱 Please enable location services and allow GPS access when prompted.");
 </script>
 
 </body>

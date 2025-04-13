@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hartmann Grid Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
+  <style>
+    #map { height: 100vh; }
+    .compass-icon {
+      width: 30px;
+      height: 30px;
+      background: url('https://upload.wikimedia.org/wikipedia/commons/e/e2/Compass_Rose_English_North.svg') no-repeat center center;
+      background-size: contain;
+      transform-origin: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([36.71, 3.17], 18);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 22,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    const userMarker = L.marker([0, 0]).addTo(map).bindPopup("Locating...").openPopup();
+    let userCircle = null;
+
+    const compassIcon = L.divIcon({
+      className: '',
+      html: '<div class="compass-icon" id="compass"></div>',
+      iconSize: [30, 30]
+    });
+    const compassMarker = L.marker([0, 0], { icon: compassIcon }).addTo(map);
+
+    function askLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+
+            userMarker.setLatLng([lat, lon]);
+            compassMarker.setLatLng([lat, lon]);
+            userMarker.setPopupContent(`📍 You: ${lat.toFixed(6)}, ${lon.toFixed(6)}`);
+            userMarker.openPopup();
+
+            if (userCircle) map.removeLayer(userCircle);
+            userCircle = L.circle([lat, lon], {
+              radius: accuracy,
+              color: '#3388ff',
+              fillColor: '#3388ff',
+              fillOpacity: 0.2
+            }).addTo(map);
+
+            // Center map on user location once
+            if (!map._userLocated) {
+              map.setView([lat, lon], 20);
+              map._userLocated = true;
+            }
+          },
+          (err) => alert("Location error: " + err.message),
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+      } else {
+        alert("Geolocation is not supported.");
+      }
+    }
+
+    function setupCompass() {
+      if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
+        DeviceOrientationEvent.requestPermission().then(response => {
+          if (response === "granted") {
+            window.addEventListener("deviceorientation", handleOrientation, true);
+          }
+        }).catch(console.error);
+      } else {
+        window.addEventListener("deviceorientation", handleOrientation, true);
+      }
+    }
+
+    function handleOrientation(event) {
+      const alpha = event.alpha;
+      const compass = document.getElementById("compass");
+      if (compass && alpha !== null) {
+        compass.style.transform = `rotate(${360 - alpha}deg)`;
+      }
+    }
+
+    // --- Hartmann Grid ---
+    let gridLines = [];
+
+    function drawHartmannGrid() {
+      // Clear old grid
+      gridLines.forEach(line => map.removeLayer(line));
+      gridLines = [];
+
+      // Grid spacing in degrees (~2 meters)
+      const latSpacing = 0.000018;
+      const lngSpacing = 0.000018;
+
+      const bounds = map.getBounds();
+      const zoom = map.getZoom();
+
+      if (zoom < 19) return; // Don't draw grid unless zoomed in
+
+      const south = bounds.getSouth();
+      const north = bounds.getNorth();
+      const west = bounds.getWest();
+      const east = bounds.getEast();
+
+      for (let lat = Math.floor(south / latSpacing) * latSpacing; lat <= north; lat += latSpacing) {
+        const line = L.polyline([[lat, west], [lat, east]], {
+          color: 'red',
+          weight: 1,
+          opacity: 0.3
+        }).addTo(map);
+        gridLines.push(line);
+      }
+
+      for (let lng = Math.floor(west / lngSpacing) * lngSpacing; lng <= east; lng += lngSpacing) {
+        const line = L.polyline([[south, lng], [north, lng]], {
+          color: 'red',
+          weight: 1,
+          opacity: 0.3
+        }).addTo(map);
+        gridLines.push(line);
+      }
+    }
+
+    map.on('moveend zoomend', drawHartmannGrid);
+
+    // --- Init ---
+    askLocation();
+    setupCompass();
+    drawHartmannGrid();
+  </script>
+</body>
+</html>

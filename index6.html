@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Real-Time Location Tracking</title>
+  <title>Real-Time Location Tracking with Sensors</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; }
@@ -63,7 +63,7 @@
           const lon = position.coords.longitude;
           const accuracy = position.coords.accuracy;
 
-          if (accuracy < 1000000) {
+          if (accuracy < 1000) {
             userLat = lat;
             userLon = lon;
             userMarker.setLatLng([lat, lon]);
@@ -101,35 +101,59 @@
         manualLocationApproved = true;
         userMarker.setPopupContent(`📍 Approved Location: ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`);
         userMarker.openPopup();
-        startGyroscopeTracking();
+        startTrackingSensors();
       } else {
         alert("Please define your location first by clicking on the map.");
       }
     }
 
-    // Gyroscope real-time tracking simulation
-    function startGyroscopeTracking() {
-      if (!manualLocationApproved) {
-        alert("Please approve the location first.");
-        return;
+    // Track device's motion (accelerometer, magnetometer, and gyroscope)
+    let accelX = 0, accelY = 0, accelZ = 0;
+    let gyroAlpha = 0, gyroBeta = 0, gyroGamma = 0;
+    let magneticHeading = 0;
+
+    function startTrackingSensors() {
+      // Accelerometer data
+      window.addEventListener('devicemotion', function(event) {
+        accelX = event.acceleration.x;
+        accelY = event.acceleration.y;
+        accelZ = event.acceleration.z;
+
+        // You can use the acceleration data to determine the speed or movement of the device
+        console.log(`Acceleration - X: ${accelX}, Y: ${accelY}, Z: ${accelZ}`);
+      });
+
+      // Gyroscope data
+      window.addEventListener('deviceorientation', function(event) {
+        gyroAlpha = event.alpha; // Rotation around z-axis (compass heading)
+        gyroBeta = event.beta;   // Rotation around x-axis (front/back tilt)
+        gyroGamma = event.gamma; // Rotation around y-axis (left/right tilt)
+
+        // Use gyroscope data to determine device orientation
+        console.log(`Gyroscope - Alpha: ${gyroAlpha}, Beta: ${gyroBeta}, Gamma: ${gyroGamma}`);
+      });
+
+      // Magnetometer data (if available)
+      if ('magnetometer' in window) {
+        window.addEventListener('magnetometer', function(event) {
+          magneticHeading = event.magneticHeading;
+          console.log(`Magnetometer - Heading: ${magneticHeading}`);
+        });
       }
 
-      // Mockup function to simulate gyroscope data (replace with actual gyroscope API)
-      function updateLocationFromGyroscope() {
-        if (userLat && userLon) {
-          const randomLatOffset = (Math.random() - 0.5) * 0.0001; // Simulate some movement
-          const randomLonOffset = (Math.random() - 0.5) * 0.0001;
+      // Now, let's use this sensor data to update the position on the map
+      setInterval(function() {
+        if (manualLocationApproved) {
+          // You could update the user's location based on sensor data
+          // Here, we simulate movement with accelerometer data
+          userLat += accelY * 0.000001;  // Simulated lat change based on acceleration
+          userLon += accelX * 0.000001;  // Simulated lon change based on acceleration
 
-          userLat += randomLatOffset;
-          userLon += randomLonOffset;
-
+          // Update the user's marker on the map
           userMarker.setLatLng([userLat, userLon]);
           userMarker.setPopupContent(`📍 You: ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`);
         }
-      }
-
-      // Update every 3 seconds
-      setInterval(updateLocationFromGyroscope, 3000);
+      }, 3000); // Update every 3 seconds
     }
   </script>
 </body>

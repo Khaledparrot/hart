@@ -3,15 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Hartmann Grid + Camera</title>
+  <title>Leaflet + Hartmann Grid + WiFi Fallback</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
   <style>
-    html, body, #map {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-    }
-
+    html, body, #map { height: 100%; margin: 0; padding: 0; }
     #controls {
       position: absolute;
       top: 10px; left: 50%;
@@ -23,7 +18,6 @@
       box-shadow: 0 2px 6px rgba(0,0,0,0.2);
       font-family: sans-serif;
     }
-
     button {
       padding: 6px 10px;
       font-size: 16px;
@@ -33,27 +27,13 @@
       color: white;
       border-radius: 5px;
     }
-
-    #cameraFeed {
-      position: absolute;
-      bottom: 10px;
-      right: 10px;
-      width: 200px;
-      height: 150px;
-      z-index: 1000;
-      border: 2px solid white;
-      border-radius: 10px;
-      background: black;
-    }
   </style>
 </head>
 <body>
   <div id="controls">
     <button onclick="askLocation()">📍 Get My Location</button>
   </div>
-
   <div id="map"></div>
-  <video id="cameraFeed" autoplay playsinline muted></video>
 
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
   <script>
@@ -64,15 +44,15 @@
       minZoom: 2
     });
 
-    // Map tiles
+    // Tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 22
     }).addTo(map);
 
-    // Scale line
     L.control.scale({ imperial: false }).addTo(map);
 
+    // Hartmann grid setup
     const refLat = 36.709639;
     const refLon = 3.164972;
     const meterToDegreeLat = 1 / 111320;
@@ -94,36 +74,26 @@
       const latMax = bounds.getNorth();
       const lonMin = bounds.getWest();
       const lonMax = bounds.getEast();
-
       const spacingLat = 2 * meterToDegreeLat;
       const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
 
-      for (let lat = refLat; lat < latMax; lat += spacingLat) {
-        if (lat > latMin) {
+      for (let lat = refLat; lat < latMax; lat += spacingLat)
+        if (lat > latMin)
           L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-        }
-      }
 
-      for (let lat = refLat; lat > latMin; lat -= spacingLat) {
-        if (lat < latMax) {
+      for (let lat = refLat; lat > latMin; lat -= spacingLat)
+        if (lat < latMax)
           L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-        }
-      }
 
-      for (let lon = refLon; lon < lonMax; lon += spacingLon) {
-        if (lon > lonMin) {
+      for (let lon = refLon; lon < lonMax; lon += spacingLon)
+        if (lon > lonMin)
           L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-        }
-      }
 
-      for (let lon = refLon; lon > lonMin; lon -= spacingLon) {
-        if (lon < lonMax) {
+      for (let lon = refLon; lon > lonMin; lon -= spacingLon)
+        if (lon < lonMax)
           L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-        }
-      }
     }
 
-    // Throttle redraw
     let gridTimeout;
     function scheduleGridRedraw() {
       if (gridTimeout) clearTimeout(gridTimeout);
@@ -133,7 +103,7 @@
     map.on('moveend zoomend', scheduleGridRedraw);
     scheduleGridRedraw();
 
-    // GPS Marker
+    // Marker for user
     let userMarker = L.marker([0, 0], {
       icon: L.icon({
         iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
@@ -142,19 +112,46 @@
       })
     }).addTo(map).bindPopup("📍 Your location");
 
+    function updateUserMarker(lat, lon) {
+      userMarker.setLatLng([lat, lon]);
+      userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+      userMarker.openPopup();
+    }
+
+    function fallbackToWiFi() {
+      fetch('https://ipapi.co/json/')
+        .then(response => response.json())
+        .then(data => {
+          const lat = data.latitude;
+          const lon = data.longitude;
+          console.warn("Using IP-based fallback location.");
+          updateUserMarker(lat, lon);
+          map.setView([lat, lon], 19);
+        })
+        .catch(err => alert("Wi-Fi location error: " + err.message));
+    }
+
     function askLocation() {
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
           (position) => {
             const lat = position.coords.latitude;
             const lon = position.coords.longitude;
+            const acc = position.coords.accuracy;
 
-            userMarker.setLatLng([lat, lon]);
-            userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
-            userMarker.openPopup();
+            console.log(`GPS accuracy: ${acc}m`);
+
+            if (acc > 2) {
+              console.warn("GPS accuracy is low (>2m), attempting Wi-Fi-based location...");
+              fallbackToWiFi();
+            } else {
+              updateUserMarker(lat, lon);
+              map.setView([lat, lon], map.getZoom());
+            }
           },
           (err) => {
-            alert("Error getting location: " + err.message);
+            alert("GPS error: " + err.message);
+            fallbackToWiFi();
           },
           {
             enableHighAccuracy: true,
@@ -163,24 +160,10 @@
           }
         );
       } else {
-        alert("Geolocation is not supported by this browser.");
+        alert("Geolocation not supported");
+        fallbackToWiFi();
       }
     }
-
-    // Start camera
-    async function startCameraFeed() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" }
-        });
-        document.getElementById("cameraFeed").srcObject = stream;
-      } catch (err) {
-        console.error("Camera access error:", err);
-        alert("Could not access camera: " + err.message);
-      }
-    }
-
-    startCameraFeed();
   </script>
 </body>
 </html>

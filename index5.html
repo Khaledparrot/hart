@@ -2,29 +2,28 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>CesiumJS Hartmann Grid 2D</title>
-  <script src="https://unpkg.com/cesium@1.109.1/Build/Cesium/Cesium.js"></script>
-  <link href="https://unpkg.com/cesium@1.109.1/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hartmann Grid + Camera</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
   <style>
-    html, body, #cesiumContainer {
-      width: 100%;
+    html, body, #map {
       height: 100%;
       margin: 0;
       padding: 0;
-      overflow: hidden;
-      font-family: sans-serif;
     }
+
     #controls {
       position: absolute;
-      top: 10px;
-      left: 50%;
+      top: 10px; left: 50%;
       transform: translateX(-50%);
       z-index: 999;
       background: white;
       padding: 8px 12px;
       border-radius: 10px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-family: sans-serif;
     }
+
     button {
       padding: 6px 10px;
       font-size: 16px;
@@ -34,113 +33,114 @@
       color: white;
       border-radius: 5px;
     }
+
+    #cameraFeed {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      width: 200px;
+      height: 150px;
+      z-index: 1000;
+      border: 2px solid white;
+      border-radius: 10px;
+      background: black;
+    }
   </style>
 </head>
 <body>
   <div id="controls">
     <button onclick="askLocation()">📍 Get My Location</button>
   </div>
-  <div id="cesiumContainer"></div>
 
+  <div id="map"></div>
+  <video id="cameraFeed" autoplay playsinline muted></video>
+
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
   <script>
-    // Set up Cesium without requiring an access token
-    window.CESIUM_BASE_URL = 'https://unpkg.com/cesium@1.109.1/Build/Cesium/';
-
-    const viewer = new Cesium.Viewer('cesiumContainer', {
-      sceneMode: Cesium.SceneMode.SCENE2D,
-      baseLayerPicker: false,
-      animation: false,
-      timeline: false,
-      geocoder: false,
-      homeButton: false,
-      navigationHelpButton: false,
-      sceneModePicker: false,
-      terrainProvider: new Cesium.EllipsoidTerrainProvider()
+    const map = L.map('map', {
+      center: [36.709639, 3.164972],
+      zoom: 19,
+      maxZoom: 22,
+      minZoom: 2
     });
 
-    // Hartmann grid
+    // Map tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 22
+    }).addTo(map);
+
+    // Scale line
+    L.control.scale({ imperial: false }).addTo(map);
+
     const refLat = 36.709639;
     const refLon = 3.164972;
-    const spacing = 2; // meters
-    const metersPerDegLat = 111320;
+    const meterToDegreeLat = 1 / 111320;
 
-    function metersToDegLat(m) {
-      return m / metersPerDegLat;
+    function getMeterToDegreeLon(lat) {
+      return 1 / (111320 * Math.cos(lat * Math.PI / 180));
     }
 
-    function metersToDegLon(m, lat) {
-      return m / (111320 * Math.cos(Cesium.Math.toRadians(lat)));
-    }
+    const gridLayer = L.layerGroup().addTo(map);
 
     function drawGrid() {
-      const bounds = viewer.camera.computeViewRectangle();
-      if (!bounds) return;
+      gridLayer.clearLayers();
 
-      const latMin = Cesium.Math.toDegrees(bounds.south);
-      const latMax = Cesium.Math.toDegrees(bounds.north);
-      const lonMin = Cesium.Math.toDegrees(bounds.west);
-      const lonMax = Cesium.Math.toDegrees(bounds.east);
-      const centerLat = (latMin + latMax) / 2;
+      const zoom = map.getZoom();
+      if (zoom < 17) return;
 
-      const deltaLat = metersToDegLat(spacing);
-      const deltaLon = metersToDegLon(spacing, centerLat);
+      const bounds = map.getBounds();
+      const latMin = bounds.getSouth();
+      const latMax = bounds.getNorth();
+      const lonMin = bounds.getWest();
+      const lonMax = bounds.getEast();
 
-      viewer.entities.removeAll();
+      const spacingLat = 2 * meterToDegreeLat;
+      const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
 
-      for (let lat = refLat; lat <= latMax; lat += deltaLat) {
-        if (lat >= latMin) {
-          viewer.entities.add({
-            polyline: {
-              positions: Cesium.Cartesian3.fromDegreesArray([lonMin, lat, lonMax, lat]),
-              width: 0.5,
-              material: Cesium.Color.GREEN
-            }
-          });
+      for (let lat = refLat; lat < latMax; lat += spacingLat) {
+        if (lat > latMin) {
+          L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
         }
       }
 
-      for (let lat = refLat; lat >= latMin; lat -= deltaLat) {
-        if (lat <= latMax) {
-          viewer.entities.add({
-            polyline: {
-              positions: Cesium.Cartesian3.fromDegreesArray([lonMin, lat, lonMax, lat]),
-              width: 0.5,
-              material: Cesium.Color.GREEN
-            }
-          });
+      for (let lat = refLat; lat > latMin; lat -= spacingLat) {
+        if (lat < latMax) {
+          L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
         }
       }
 
-      for (let lon = refLon; lon <= lonMax; lon += deltaLon) {
-        if (lon >= lonMin) {
-          viewer.entities.add({
-            polyline: {
-              positions: Cesium.Cartesian3.fromDegreesArray([lon, latMin, lon, latMax]),
-              width: 0.5,
-              material: Cesium.Color.GREEN
-            }
-          });
+      for (let lon = refLon; lon < lonMax; lon += spacingLon) {
+        if (lon > lonMin) {
+          L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
         }
       }
 
-      for (let lon = refLon; lon >= lonMin; lon -= deltaLon) {
-        if (lon <= lonMax) {
-          viewer.entities.add({
-            polyline: {
-              positions: Cesium.Cartesian3.fromDegreesArray([lon, latMin, lon, latMax]),
-              width: 0.5,
-              material: Cesium.Color.GREEN
-            }
-          });
+      for (let lon = refLon; lon > lonMin; lon -= spacingLon) {
+        if (lon < lonMax) {
+          L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
         }
       }
     }
 
-    viewer.scene.camera.moveEnd.addEventListener(drawGrid);
-    drawGrid();
+    // Throttle redraw
+    let gridTimeout;
+    function scheduleGridRedraw() {
+      if (gridTimeout) clearTimeout(gridTimeout);
+      gridTimeout = setTimeout(drawGrid, 300);
+    }
 
-    // Real-time GPS
-    let userEntity;
+    map.on('moveend zoomend', scheduleGridRedraw);
+    scheduleGridRedraw();
+
+    // GPS Marker
+    let userMarker = L.marker([0, 0], {
+      icon: L.icon({
+        iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41]
+      })
+    }).addTo(map).bindPopup("📍 Your location");
 
     function askLocation() {
       if (navigator.geolocation) {
@@ -149,31 +149,12 @@
             const lat = position.coords.latitude;
             const lon = position.coords.longitude;
 
-            if (!userEntity) {
-              userEntity = viewer.entities.add({
-                position: Cesium.Cartesian3.fromDegrees(lon, lat),
-                point: { pixelSize: 10, color: Cesium.Color.BLUE },
-                label: {
-                  text: `📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`,
-                  font: '14px sans-serif',
-                  style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                  outlineWidth: 2,
-                  fillColor: Cesium.Color.WHITE,
-                  verticalOrigin: Cesium.VerticalOrigin.TOP,
-                  pixelOffset: new Cesium.Cartesian2(0, -15)
-                }
-              });
-
-              viewer.camera.flyTo({
-                destination: Cesium.Cartesian3.fromDegrees(lon, lat, 1000)
-              });
-            } else {
-              userEntity.position = Cesium.Cartesian3.fromDegrees(lon, lat);
-              userEntity.label.text = `📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-            }
+            userMarker.setLatLng([lat, lon]);
+            userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+            userMarker.openPopup();
           },
-          (error) => {
-            alert("Location error: " + error.message);
+          (err) => {
+            alert("Error getting location: " + err.message);
           },
           {
             enableHighAccuracy: true,
@@ -182,9 +163,24 @@
           }
         );
       } else {
-        alert("Your browser doesn't support GPS.");
+        alert("Geolocation is not supported by this browser.");
       }
     }
+
+    // Start camera
+    async function startCameraFeed() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" }
+        });
+        document.getElementById("cameraFeed").srcObject = stream;
+      } catch (err) {
+        console.error("Camera access error:", err);
+        alert("Could not access camera: " + err.message);
+      }
+    }
+
+    startCameraFeed();
   </script>
 </body>
 </html>

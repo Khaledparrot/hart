@@ -56,6 +56,16 @@
     let userLon = null;
     let manualLocationApproved = false;
 
+    // Check for sensor support
+    function checkSensorSupport() {
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceOrientationEvent !== 'undefined') {
+        console.log('Device motion and orientation events are supported!');
+      } else {
+        console.log('Device motion or orientation events are not supported on this device.');
+      }
+    }
+
+    // Ask the user for their GPS location
     function askLocation() {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition((position) => {
@@ -63,7 +73,7 @@
           const lon = position.coords.longitude;
           const accuracy = position.coords.accuracy;
 
-          if (accuracy < 1000) {
+          if (accuracy < 5) {
             userLat = lat;
             userLon = lon;
             userMarker.setLatLng([lat, lon]);
@@ -115,12 +125,12 @@
     function startTrackingSensors() {
       // Accelerometer data
       window.addEventListener('devicemotion', function(event) {
-        accelX = event.acceleration.x;
-        accelY = event.acceleration.y;
-        accelZ = event.acceleration.z;
-
-        // You can use the acceleration data to determine the speed or movement of the device
-        console.log(`Acceleration - X: ${accelX}, Y: ${accelY}, Z: ${accelZ}`);
+        if (event.acceleration) {
+          accelX = event.acceleration.x;
+          accelY = event.acceleration.y;
+          accelZ = event.acceleration.z;
+          console.log(`Acceleration - X: ${accelX}, Y: ${accelY}, Z: ${accelZ}`);
+        }
       });
 
       // Gyroscope data
@@ -129,7 +139,6 @@
         gyroBeta = event.beta;   // Rotation around x-axis (front/back tilt)
         gyroGamma = event.gamma; // Rotation around y-axis (left/right tilt)
 
-        // Use gyroscope data to determine device orientation
         console.log(`Gyroscope - Alpha: ${gyroAlpha}, Beta: ${gyroBeta}, Gamma: ${gyroGamma}`);
       });
 
@@ -145,7 +154,6 @@
       setInterval(function() {
         if (manualLocationApproved) {
           // You could update the user's location based on sensor data
-          // Here, we simulate movement with accelerometer data
           userLat += accelY * 0.000001;  // Simulated lat change based on acceleration
           userLon += accelX * 0.000001;  // Simulated lon change based on acceleration
 
@@ -155,6 +163,9 @@
         }
       }, 3000); // Update every 3 seconds
     }
+
+    // Check for sensor support on page load
+    checkSensorSupport();
   </script>
 </body>
 </html>

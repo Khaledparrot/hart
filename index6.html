@@ -73,7 +73,7 @@
           const lon = position.coords.longitude;
           const accuracy = position.coords.accuracy;
 
-          if (accuracy < 5) {
+          if (accuracy < 1000) {
             userLat = lat;
             userLon = lon;
             userMarker.setLatLng([lat, lon]);

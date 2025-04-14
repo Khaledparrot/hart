@@ -1,96 +1,132 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Accurate Location on OpenStreetMap</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
-  <style>
-    html, body, #map { height: 100%; margin: 0; padding: 0; }
-    #refresh-btn {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      z-index: 1000;
-      padding: 10px 15px;
-      background: white;
-      border-radius: 10px;
-      box-shadow: 0 0 5px rgba(0,0,0,0.3);
-      cursor: pointer;
-      font-weight: bold;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hartmann Grid with Map and Gyroscope</title>
+    <!-- Leaflet.js CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
+    <style>
+        #map { height: 100vh; }
+    </style>
 </head>
 <body>
+    <div id="map"></div>
 
-<div id="refresh-btn" onclick="manualRefresh()">🔄 Refresh Location</div>
-<div id="map"></div>
+    <!-- Leaflet.js -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 
-<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-<script>
-  const map = L.map('map').setView([36.7096, 3.164], 20);
+    <script>
+        // Define your fixed starting points for Hartmann grid intersections
+        var lat1 = 36.7097;  // Fixed starting point (e.g., Algeria)
+        var lon1 = 3.1655;
 
-  // ✅ OpenStreetMap Standard Layer
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 22,
-    attribution: '© OpenStreetMap contributors'
-  }).addTo(map);
+        var gridSpacingNS = 2.0;  // Grid spacing North-South in meters
+        var gridSpacingEW = 2.5;  // Grid spacing East-West in meters
+        var alertThreshold = 0.5;  // Alert if within 0.5 meters of a grid intersection
 
-  let userMarker = L.marker([0, 0]).addTo(map);
-  let accuracyCircle = L.circle([0, 0], { radius: 1 }).addTo(map);
-  let recentPositions = [];
+        // Initialize the map (using OpenStreetMap tiles)
+        var map = L.map('map').setView([lat1, lon1], 15); // Zoom level set for more detail
 
-  function updateLocation(position) {
-    const lat = position.coords.latitude;
-    const lon = position.coords.longitude;
-    const acc = position.coords.accuracy;
+        // Add OpenStreetMap tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
 
-    if (acc > 30) {
-      console.log("Ignored low-accuracy reading:", acc);
-      return;
-    }
+        // User marker (will be updated based on user's geolocation and gyroscope)
+        var userMarker = L.marker([0, 0]).addTo(map);
+        userMarker.bindPopup("Your location");
 
-    recentPositions.push({ lat, lon });
-    if (recentPositions.length > 5) recentPositions.shift();
+        // Variables to store heading from gyroscope
+        var currentHeading = 0;
 
-    const avgLat = recentPositions.reduce((sum, p) => sum + p.lat, 0) / recentPositions.length;
-    const avgLon = recentPositions.reduce((sum, p) => sum + p.lon, 0) / recentPositions.length;
+        // Function to get the user's current location
+        function getLocationAndCalculateGrid() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    var latUser = position.coords.latitude;
+                    var lonUser = position.coords.longitude;
 
-    userMarker.setLatLng([avgLat, avgLon]).bindPopup(`📍 You are here (±${Math.round(acc)} m)`).openPopup();
-    accuracyCircle.setLatLng([avgLat, avgLon]).setRadius(acc);
-    map.setView([avgLat, avgLon]);
-  }
+                    // Update the user marker
+                    userMarker.setLatLng([latUser, lonUser]);
+                    userMarker.setPopupContent(`Your location: ${latUser}, ${lonUser}`);
 
-  function locationError(err) {
-    console.error("Geolocation Error", err);
-    alert("📍 Location access failed.\n\nMake sure:\n- You allowed location permission\n- GPS is ON\n- You're using HTTPS\n\nError: " + err.message);
-  }
+                    // Check proximity to Hartmann grid intersections
+                    checkProximityToGrid(latUser, lonUser);
 
-  function manualRefresh() {
-    if (!navigator.geolocation) {
-      alert("Geolocation is not supported by your browser.");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(updateLocation, locationError, {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0
-    });
-  }
+                }, function(error) {
+                    console.log("Error getting location: " + error.message);
+                });
+            } else {
+                console.log("Geolocation is not supported by this browser.");
+            }
+        }
 
-  // Watch position
-  if (navigator.geolocation) {
-    navigator.geolocation.watchPosition(updateLocation, locationError, {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0
-    });
-  } else {
-    alert("Geolocation is not supported by your browser.");
-  }
+        // Function to calculate the distance between two points (in meters)
+        function calculate_distance(lat1, lon1, lat2, lon2) {
+            var R = 6371e3;  // Earth's radius in meters
+            var φ1 = toRadians(lat1);
+            var φ2 = toRadians(lat2);
+            var Δφ = toRadians(lat2 - lat1);
+            var Δλ = toRadians(lon2 - lon1);
 
-  alert("📱 Please enable location services and allow GPS access when prompted.");
-</script>
+            var a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                    Math.cos(φ1) * Math.cos(φ2) *
+                    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c; // Returns the distance in meters
+        }
 
+        // Function to convert degrees to radians
+        function toRadians(degrees) {
+            return degrees * Math.PI / 180;
+        }
+
+        // Function to check proximity to grid intersections and alert
+        function checkProximityToGrid(latUser, lonUser) {
+            // Check for proximity to multiple intersections
+            var distance = calculate_distance(latUser, lonUser, lat1, lon1);
+
+            // Iterate through the grid to check for proximity
+            for (var i = 0; i < 10; i++) {
+                for (var j = 0; j < 10; j++) {
+                    var gridLat = lat1 + (i * gridSpacingNS / 111.32); // Convert meters to degrees
+                    var gridLon = lon1 + (j * gridSpacingEW / (111.32 * Math.cos(toRadians(lat1)))); // Convert meters to degrees
+
+                    // Calculate distance from user's location to the grid intersection
+                    var gridDistance = calculate_distance(latUser, lonUser, gridLat, gridLon);
+
+                    if (gridDistance < alertThreshold) {
+                        // Alert if within threshold distance (0.5 meters)
+                        L.marker([gridLat, gridLon], {icon: L.icon({iconUrl: 'https://img.icons8.com/ios-filled/50/ff0000/marker.png'})}).addTo(map)
+                            .bindPopup("You're near a Hartmann grid crossing!")
+                            .openPopup();
+                    } else {
+                        // Remove any previous alert markers
+                        map.eachLayer(function(layer) {
+                            if (layer instanceof L.Marker) {
+                                map.removeLayer(layer);
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        // Event listener for device orientation to adjust heading
+        if (window.DeviceOrientationEvent) {
+            window.addEventListener('deviceorientation', function(event) {
+                currentHeading = event.alpha; // Get the current heading from the gyroscope
+                console.log("Device heading: " + currentHeading);
+
+                // Optionally, you can use the heading to adjust the user's marker rotation
+                userMarker.setRotationAngle(currentHeading);
+            });
+        }
+
+        // Update location every 1 second
+        setInterval(getLocationAndCalculateGrid, 1000);
+
+    </script>
 </body>
 </html>

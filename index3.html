@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Optimized Location with GPS and Gyroscope</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
+  <style>
+    html, body, #map { height: 100%; margin: 0; padding: 0; }
+    #controls {
+      position: absolute;
+      top: 10px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 999;
+      background: white;
+      padding: 8px 12px;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-family: sans-serif;
+    }
+    button {
+      padding: 6px 10px;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
+      background: #007bff;
+      color: white;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button onclick="getLocation()">📍 Get My Location</button>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map', {
+      center: [36.709639, 3.164972],
+      zoom: 19,
+      maxZoom: 22,
+      minZoom: 2
+    });
+
+    // Light map tiles
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap & CartoDB',
+      maxZoom: 22
+    }).addTo(map);
+
+    let userMarker = L.marker([0, 0]).addTo(map).bindPopup("📍 Your location");
+
+    let initialLat = null;
+    let initialLon = null;
+    let watchId;
+
+    // Get initial location using GPS
+    function getLocation() {
+      if (navigator.geolocation) {
+        // Start watching the location
+        watchId = navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+
+            if (initialLat === null || initialLon === null) {
+              // Set the initial coordinates only once
+              initialLat = lat;
+              initialLon = lon;
+              userMarker.setLatLng([lat, lon]);
+              userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+              userMarker.openPopup();
+              map.setView([lat, lon], map.getZoom());
+            }
+            // Use the gyroscope/accelerometer data to adjust position (later)
+          },
+          (err) => {
+            alert("Error getting location: " + err.message);
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 5000,
+            timeout: 10000
+          }
+        );
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
+    }
+
+    // Listen for device orientation changes (useful for refining location when moving)
+    window.addEventListener('deviceorientation', (event) => {
+      if (initialLat === null || initialLon === null) return; // Don't adjust until we have an initial position
+
+      // Get orientation angles
+      const alpha = event.alpha; // Rotation around Z-axis (compass direction)
+      const beta = event.beta;   // Rotation around X-axis (tilt forward/back)
+      const gamma = event.gamma; // Rotation around Y-axis (tilt left/right)
+
+      // Adjust the marker position based on gyroscope data (this is a simplistic model)
+      const adjustment = 0.00002;  // Change this to scale movement if needed
+      const latAdjustment = beta * adjustment;
+      const lonAdjustment = gamma * adjustment;
+
+      const adjustedLat = initialLat + latAdjustment;
+      const adjustedLon = initialLon + lonAdjustment;
+
+      // Update the marker position smoothly
+      userMarker.setLatLng([adjustedLat, adjustedLon]);
+      userMarker.setPopupContent(`📍 Adjusted: ${adjustedLat.toFixed(5)}, ${adjustedLon.toFixed(5)}`);
+      userMarker.openPopup();
+      
+      // Optionally, update the map center to keep it centered on the marker
+      map.setView([adjustedLat, adjustedLon], map.getZoom());
+    });
+  </script>
+</body>
+</html>

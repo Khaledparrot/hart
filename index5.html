@@ -119,11 +119,12 @@
     }
 
     function fallbackToWiFi() {
-      fetch('https://ipapi.co/json/')
+      fetch('http://ip-api.com/json/')
         .then(response => response.json())
         .then(data => {
-          const lat = data.latitude;
-          const lon = data.longitude;
+          const location = data.loc.split(',');
+          const lat = parseFloat(location[0]);
+          const lon = parseFloat(location[1]);
           console.warn("Using IP-based fallback location.");
           updateUserMarker(lat, lon);
           map.setView([lat, lon], 19);

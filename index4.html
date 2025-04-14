@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Hartmann Grid with OpenLayers</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@6.15.1/ol.css" />
   <style>
     html, body { margin: 0; padding: 0; height: 100%; }
     #map { width: 100%; height: 100%; }
@@ -28,7 +29,6 @@
       border-radius: 5px;
     }
   </style>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@latest/ol.css" />
 </head>
 <body>
   <div id="controls">
@@ -36,51 +36,17 @@
   </div>
   <div id="map"></div>
 
-  <script type="module">
-    import 'https://cdn.jsdelivr.net/npm/ol@latest/ol.css';
-    import Map from 'https://cdn.jsdelivr.net/npm/ol@latest/Map.js';
-    import View from 'https://cdn.jsdelivr.net/npm/ol@latest/View.js';
-    import TileLayer from 'https://cdn.jsdelivr.net/npm/ol@latest/layer/Tile.js';
-    import OSM from 'https://cdn.jsdelivr.net/npm/ol@latest/source/OSM.js';
-    import { fromLonLat, toLonLat } from 'https://cdn.jsdelivr.net/npm/ol@latest/proj.js';
-    import Feature from 'https://cdn.jsdelivr.net/npm/ol@latest/Feature.js';
-    import Point from 'https://cdn.jsdelivr.net/npm/ol@latest/geom/Point.js';
-    import LineString from 'https://cdn.jsdelivr.net/npm/ol@latest/geom/LineString.js';
-    import VectorSource from 'https://cdn.jsdelivr.net/npm/ol@latest/source/Vector.js';
-    import VectorLayer from 'https://cdn.jsdelivr.net/npm/ol@latest/layer/Vector.js';
-    import Style from 'https://cdn.jsdelivr.net/npm/ol@latest/style/Style.js';
-    import Stroke from 'https://cdn.jsdelivr.net/npm/ol@latest/style/Stroke.js';
-    import Icon from 'https://cdn.jsdelivr.net/npm/ol@latest/style/Icon.js';
-
-    const gridSource = new VectorSource();
-    const gridLayer = new VectorLayer({
-      source: gridSource,
-      style: new Style({
-        stroke: new Stroke({ color: '#00ff00', width: 0.5 })
-      })
-    });
-
-    const userPosition = new Feature(new Point(fromLonLat([3.164972, 36.709639])));
-    userPosition.setStyle(new Style({
-      image: new Icon({
-        src: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
-        scale: 0.05
-      })
-    }));
-
-    const positionLayer = new VectorLayer({
-      source: new VectorSource({ features: [userPosition] })
-    });
-
-    const map = new Map({
+  <script src="https://cdn.jsdelivr.net/npm/ol@6.15.1/dist/ol.js"></script>
+  <script>
+    const map = new ol.Map({
       target: 'map',
       layers: [
-        new TileLayer({ source: new OSM() }),
-        gridLayer,
-        positionLayer
+        new ol.layer.Tile({
+          source: new ol.source.OSM()
+        })
       ],
-      view: new View({
-        center: fromLonLat([3.164972, 36.709639]),
+      view: new ol.View({
+        center: ol.proj.fromLonLat([3.164972, 36.709639]),
         zoom: 19,
         maxZoom: 22
       })
@@ -88,69 +54,97 @@
 
     const refLat = 36.709639;
     const refLon = 3.164972;
-
     const meterToDegreeLat = 1 / 111320;
+
     function meterToDegreeLon(lat) {
       return 1 / (111320 * Math.cos(lat * Math.PI / 180));
     }
 
+    const gridSource = new ol.source.Vector();
+    const gridLayer = new ol.layer.Vector({
+      source: gridSource,
+      style: new ol.style.Style({
+        stroke: new ol.style.Stroke({ color: '#00ff00', width: 0.5 })
+      })
+    });
+    map.addLayer(gridLayer);
+
     function drawGrid() {
       gridSource.clear();
+
       const zoom = map.getView().getZoom();
       if (zoom < 17) return;
 
-      const extent = map.getView().calculateExtent(map.getSize());
-      const [minX, minY, maxX, maxY] = extent;
-      const [lonMin, latMin] = toLonLat([minX, minY]);
-      const [lonMax, latMax] = toLonLat([maxX, maxY]);
+      const extent = ol.proj.transformExtent(
+        map.getView().calculateExtent(map.getSize()),
+        'EPSG:3857',
+        'EPSG:4326'
+      );
 
-      const center = toLonLat(map.getView().getCenter());
+      const [lonMin, latMin, lonMax, latMax] = extent;
+      const center = ol.proj.toLonLat(map.getView().getCenter());
       const spacingLat = 2 * meterToDegreeLat;
       const spacingLon = 2 * meterToDegreeLon(center[1]);
 
       for (let lat = refLat; lat < latMax; lat += spacingLat) {
         if (lat > latMin) {
-          const line = new LineString([
-            fromLonLat([lonMin, lat]),
-            fromLonLat([lonMax, lat])
+          const line = new ol.geom.LineString([
+            ol.proj.fromLonLat([lonMin, lat]),
+            ol.proj.fromLonLat([lonMax, lat])
           ]);
-          gridSource.addFeature(new Feature(line));
+          gridSource.addFeature(new ol.Feature({ geometry: line }));
         }
       }
+
       for (let lat = refLat; lat > latMin; lat -= spacingLat) {
         if (lat < latMax) {
-          const line = new LineString([
-            fromLonLat([lonMin, lat]),
-            fromLonLat([lonMax, lat])
+          const line = new ol.geom.LineString([
+            ol.proj.fromLonLat([lonMin, lat]),
+            ol.proj.fromLonLat([lonMax, lat])
           ]);
-          gridSource.addFeature(new Feature(line));
+          gridSource.addFeature(new ol.Feature({ geometry: line }));
         }
       }
 
       for (let lon = refLon; lon < lonMax; lon += spacingLon) {
         if (lon > lonMin) {
-          const line = new LineString([
-            fromLonLat([lon, latMin]),
-            fromLonLat([lon, latMax])
+          const line = new ol.geom.LineString([
+            ol.proj.fromLonLat([lon, latMin]),
+            ol.proj.fromLonLat([lon, latMax])
           ]);
-          gridSource.addFeature(new Feature(line));
+          gridSource.addFeature(new ol.Feature({ geometry: line }));
         }
       }
+
       for (let lon = refLon; lon > lonMin; lon -= spacingLon) {
         if (lon < lonMax) {
-          const line = new LineString([
-            fromLonLat([lon, latMin]),
-            fromLonLat([lon, latMax])
+          const line = new ol.geom.LineString([
+            ol.proj.fromLonLat([lon, latMin]),
+            ol.proj.fromLonLat([lon, latMax])
           ]);
-          gridSource.addFeature(new Feature(line));
+          gridSource.addFeature(new ol.Feature({ geometry: line }));
         }
       }
     }
 
-    map.on('moveend', () => {
-      setTimeout(drawGrid, 300);
-    });
+    map.on('moveend', () => setTimeout(drawGrid, 200));
     drawGrid();
+
+    // User location
+    const userFeature = new ol.Feature(new ol.geom.Point(ol.proj.fromLonLat([3.164972, 36.709639])));
+    userFeature.setStyle(new ol.style.Style({
+      image: new ol.style.Icon({
+        src: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
+        scale: 0.05
+      })
+    }));
+
+    const userLayer = new ol.layer.Vector({
+      source: new ol.source.Vector({
+        features: [userFeature]
+      })
+    });
+    map.addLayer(userLayer);
 
     function startTracking() {
       if (!navigator.geolocation) {
@@ -160,17 +154,18 @@
 
       navigator.geolocation.watchPosition(
         (pos) => {
-          const { latitude, longitude } = pos.coords;
-          const coord = fromLonLat([longitude, latitude]);
-          userPosition.getGeometry().setCoordinates(coord);
+          const lon = pos.coords.longitude;
+          const lat = pos.coords.latitude;
+          const coords = ol.proj.fromLonLat([lon, lat]);
+          userFeature.getGeometry().setCoordinates(coords);
         },
         (err) => {
-          alert('Error getting location: ' + err.message);
+          alert("Location error: " + err.message);
         },
         {
           enableHighAccuracy: true,
-          maximumAge: 5000,
-          timeout: 10000
+          timeout: 10000,
+          maximumAge: 5000
         }
       );
     }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Real Location + Hartmann Grid</title>
+  <title>Real-Time Location + Hartmann Grid</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; }
@@ -31,7 +31,7 @@
 </head>
 <body>
   <div id="controls">
-    <button onclick="getAccurateLocation()">📍 Get My Location</button>
+    <button onclick="startTracking()">▶️ Start Tracking</button>
   </div>
   <div id="map"></div>
 
@@ -64,7 +64,6 @@
 
     function drawGrid() {
       gridLayer.clearLayers();
-
       const zoom = map.getZoom();
       if (zoom < 17) return;
 
@@ -82,19 +81,16 @@
           L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
         }
       }
-
       for (let lat = refLat; lat > latMin; lat -= spacingLat) {
         if (lat < latMax) {
           L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
         }
       }
-
       for (let lon = refLon; lon < lonMax; lon += spacingLon) {
         if (lon > lonMin) {
           L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
         }
       }
-
       for (let lon = refLon; lon > lonMin; lon -= spacingLon) {
         if (lon < lonMax) {
           L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
@@ -114,7 +110,17 @@
       })
     }).addTo(map).bindPopup("📍 Your location");
 
-    function getAccurateLocation() {
+    // Real-time tracking every 5 seconds
+    let trackInterval;
+
+    function startTracking() {
+      if (trackInterval) return; // already tracking
+
+      updateLocation(); // initial update
+      trackInterval = setInterval(updateLocation, 5000); // repeat every 5 sec
+    }
+
+    function updateLocation() {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (position) => {
@@ -125,11 +131,11 @@
             console.log(`GPS Accuracy: ${accuracy} meters`);
 
             if (accuracy > 100) {
-              fallbackToIP(); // Too inaccurate, fallback
+              fallbackToIP();
               return;
             }
 
-            updateLocation(lat, lon, accuracy);
+            updateMarker(lat, lon, accuracy);
           },
           (error) => {
             console.warn("GPS error:", error.message);
@@ -152,18 +158,18 @@
         .then(data => {
           const lat = data.latitude;
           const lon = data.longitude;
-          updateLocation(lat, lon, "Wi-Fi/IP based");
+          updateMarker(lat, lon, "Wi-Fi/IP");
         })
         .catch(err => {
-          alert("Wi-Fi location error: " + err.message);
+          console.error("Wi-Fi location error: " + err.message);
         });
     }
 
-    function updateLocation(lat, lon, accuracy) {
+    function updateMarker(lat, lon, accuracy) {
       userMarker.setLatLng([lat, lon]);
       userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)} (Acc: ${accuracy}m)`);
       userMarker.openPopup();
-      map.setView([lat, lon], 19);
+      map.setView([lat, lon]);
     }
   </script>
 </body>

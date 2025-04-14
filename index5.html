@@ -124,7 +124,7 @@
 
             console.log(`GPS Accuracy: ${accuracy} meters`);
 
-            if (accuracy > 2) {
+            if (accuracy > 100) {
               fallbackToIP(); // Too inaccurate, fallback
               return;
             }

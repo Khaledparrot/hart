@@ -122,6 +122,24 @@
     let gyroAlpha = 0, gyroBeta = 0, gyroGamma = 0;
     let magneticHeading = 0;
 
+    // Permissions for accessing sensors
+    function requestSensorPermissions() {
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+        // iOS 13+ (Safari)
+        DeviceOrientationEvent.requestPermission().then(response => {
+          if (response === 'granted') {
+            startTrackingSensors();
+          } else {
+            alert("Sensor permission not granted.");
+          }
+        }).catch(console.error);
+      } else {
+        // On non-iOS devices, start tracking automatically
+        startTrackingSensors();
+      }
+    }
+
+    // Start tracking sensors
     function startTrackingSensors() {
       // Accelerometer data
       window.addEventListener('devicemotion', function(event) {
@@ -164,8 +182,9 @@
       }, 3000); // Update every 3 seconds
     }
 
-    // Check for sensor support on page load
+    // Check for sensor support and request permissions
     checkSensorSupport();
+    requestSensorPermissions();
   </script>
 </body>
 </html>

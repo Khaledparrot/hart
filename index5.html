@@ -48,7 +48,7 @@
 
     // Function to get location using IP (no API key required)
     function getLocation() {
-      fetch('http://ip-api.com/json/')
+      fetch('https://ip-api.com/json/')
         .then(response => response.json())
         .then(data => {
           const location = data.loc.split(',');

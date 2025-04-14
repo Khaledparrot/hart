@@ -1,132 +1,166 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hartmann Grid with Map and Gyroscope</title>
-    <!-- Leaflet.js CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
-    <style>
-        #map { height: 100vh; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Optimized Hartmann Grid</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
+  <style>
+    html, body, #map { height: 100%; margin: 0; padding: 0; }
+    #controls {
+      position: absolute;
+      top: 10px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 999;
+      background: white;
+      padding: 8px 12px;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-family: sans-serif;
+    }
+    button {
+      padding: 6px 10px;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
+      background: #007bff;
+      color: white;
+      border-radius: 5px;
+    }
+  </style>
 </head>
 <body>
-    <div id="map"></div>
+  <div id="controls">
+    <button onclick="askLocation()">📍 Get My Location</button>
+  </div>
+  <div id="map"></div>
 
-    <!-- Leaflet.js -->
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map', {
+      center: [36.709639, 3.164972],
+      zoom: 19,
+      maxZoom: 22,
+      minZoom: 2
+    });
 
-    <script>
-        // Define your fixed starting points for Hartmann grid intersections
-        var lat1 = 36.7097;  // Fixed starting point (e.g., Algeria)
-        var lon1 = 3.1655;
+    // Light map tiles
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap & CartoDB',
+      maxZoom: 22
+    }).addTo(map);
 
-        var gridSpacingNS = 2.0;  // Grid spacing North-South in meters
-        var gridSpacingEW = 2.5;  // Grid spacing East-West in meters
-        var alertThreshold = 0.5;  // Alert if within 0.5 meters of a grid intersection
+    const refLat = 36.709639;
+    const refLon = 3.164972;
+    const meterToDegreeLat = 1 / 111320;
 
-        // Initialize the map (using OpenStreetMap tiles)
-        var map = L.map('map').setView([lat1, lon1], 15); // Zoom level set for more detail
+    function getMeterToDegreeLon(lat) {
+      return 1 / (111320 * Math.cos(lat * Math.PI / 180));
+    }
 
-        // Add OpenStreetMap tile layer
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap contributors'
-        }).addTo(map);
+    const gridLayer = L.layerGroup().addTo(map);
 
-        // User marker (will be updated based on user's geolocation and gyroscope)
-        var userMarker = L.marker([0, 0]).addTo(map);
-        userMarker.bindPopup("Your location");
+    function drawGrid() {
+      gridLayer.clearLayers();
 
-        // Variables to store heading from gyroscope
-        var currentHeading = 0;
+      const zoom = map.getZoom();
+      if (zoom < 17) return;
 
-        // Function to get the user's current location
-        function getLocationAndCalculateGrid() {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(function(position) {
-                    var latUser = position.coords.latitude;
-                    var lonUser = position.coords.longitude;
+      const bounds = map.getBounds();
+      const latMin = bounds.getSouth();
+      const latMax = bounds.getNorth();
+      const lonMin = bounds.getWest();
+      const lonMax = bounds.getEast();
 
-                    // Update the user marker
-                    userMarker.setLatLng([latUser, lonUser]);
-                    userMarker.setPopupContent(`Your location: ${latUser}, ${lonUser}`);
+      const spacingLat = 2 * meterToDegreeLat;
+      const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
 
-                    // Check proximity to Hartmann grid intersections
-                    checkProximityToGrid(latUser, lonUser);
+      for (let lat = refLat; lat < latMax; lat += spacingLat) {
+        if (lat > latMin) {
+          L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+      }
 
-                }, function(error) {
-                    console.log("Error getting location: " + error.message);
-                });
-            } else {
-                console.log("Geolocation is not supported by this browser.");
+      for (let lat = refLat; lat > latMin; lat -= spacingLat) {
+        if (lat < latMax) {
+          L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+      }
+
+      for (let lon = refLon; lon < lonMax; lon += spacingLon) {
+        if (lon > lonMin) {
+          L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+      }
+
+      for (let lon = refLon; lon > lonMin; lon -= spacingLon) {
+        if (lon < lonMax) {
+          L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+      }
+    }
+
+    // Throttle redraw
+    let gridTimeout;
+    function scheduleGridRedraw() {
+      if (gridTimeout) clearTimeout(gridTimeout);
+      gridTimeout = setTimeout(drawGrid, 300); // wait 300ms after move/zoom
+    }
+
+    map.on('moveend zoomend', scheduleGridRedraw);
+    scheduleGridRedraw();
+
+    let userMarker = L.marker([0, 0]).addTo(map).bindPopup("📍 Your location");
+
+    function askLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+
+            userMarker.setLatLng([lat, lon]);
+            userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+            userMarker.openPopup();
+
+            // Center map to the user's location
+            map.setView([lat, lon], map.getZoom());
+
+            // Check if user is near a grid crossing (e.g., within 2 meters)
+            const distance = calculateDistance(lat, lon, refLat, refLon);
+            if (distance < 2) {
+              alert("You are near a Hartmann grid crossing point! Please stay away for your health.");
             }
-        }
+          },
+          (err) => {
+            alert("Error getting location: " + err.message);
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 5000,
+            timeout: 10000
+          }
+        );
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
+    }
 
-        // Function to calculate the distance between two points (in meters)
-        function calculate_distance(lat1, lon1, lat2, lon2) {
-            var R = 6371e3;  // Earth's radius in meters
-            var φ1 = toRadians(lat1);
-            var φ2 = toRadians(lat2);
-            var Δφ = toRadians(lat2 - lat1);
-            var Δλ = toRadians(lon2 - lon1);
+    // Calculate the distance between two points (in meters)
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371000; // Earth's radius in meters
+      const φ1 = lat1 * Math.PI / 180;
+      const φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
 
-            var a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-                    Math.cos(φ1) * Math.cos(φ2) *
-                    Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            return R * c; // Returns the distance in meters
-        }
-
-        // Function to convert degrees to radians
-        function toRadians(degrees) {
-            return degrees * Math.PI / 180;
-        }
-
-        // Function to check proximity to grid intersections and alert
-        function checkProximityToGrid(latUser, lonUser) {
-            // Check for proximity to multiple intersections
-            var distance = calculate_distance(latUser, lonUser, lat1, lon1);
-
-            // Iterate through the grid to check for proximity
-            for (var i = 0; i < 10; i++) {
-                for (var j = 0; j < 10; j++) {
-                    var gridLat = lat1 + (i * gridSpacingNS / 111.32); // Convert meters to degrees
-                    var gridLon = lon1 + (j * gridSpacingEW / (111.32 * Math.cos(toRadians(lat1)))); // Convert meters to degrees
-
-                    // Calculate distance from user's location to the grid intersection
-                    var gridDistance = calculate_distance(latUser, lonUser, gridLat, gridLon);
-
-                    if (gridDistance < alertThreshold) {
-                        // Alert if within threshold distance (0.5 meters)
-                        L.marker([gridLat, gridLon], {icon: L.icon({iconUrl: 'https://img.icons8.com/ios-filled/50/ff0000/marker.png'})}).addTo(map)
-                            .bindPopup("You're near a Hartmann grid crossing!")
-                            .openPopup();
-                    } else {
-                        // Remove any previous alert markers
-                        map.eachLayer(function(layer) {
-                            if (layer instanceof L.Marker) {
-                                map.removeLayer(layer);
-                            }
-                        });
-                    }
-                }
-            }
-        }
-
-        // Event listener for device orientation to adjust heading
-        if (window.DeviceOrientationEvent) {
-            window.addEventListener('deviceorientation', function(event) {
-                currentHeading = event.alpha; // Get the current heading from the gyroscope
-                console.log("Device heading: " + currentHeading);
-
-                // Optionally, you can use the heading to adjust the user's marker rotation
-                userMarker.setRotationAngle(currentHeading);
-            });
-        }
-
-        // Update location every 1 second
-        setInterval(getLocationAndCalculateGrid, 1000);
-
-    </script>
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const d = R * c; // Distance in meters
+      return d;
+    }
+  </script>
 </body>
 </html>

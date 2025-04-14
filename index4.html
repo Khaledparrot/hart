@@ -2,142 +2,152 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Hartmann Grid with OpenLayers</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@6.15.1/ol.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Optimized Hartmann Grid</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; }
-    #map { width: 100%; height: 100%; }
+    html, body, #map { height: 100%; margin: 0; padding: 0; }
     #controls {
       position: absolute;
-      top: 10px;
-      left: 50%;
+      top: 10px; left: 50%;
       transform: translateX(-50%);
-      z-index: 1000;
+      z-index: 999;
       background: white;
-      padding: 10px;
+      padding: 8px 12px;
       border-radius: 10px;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
       font-family: sans-serif;
     }
     button {
-      padding: 6px 12px;
-      font-size: 14px;
+      padding: 6px 10px;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
       background: #007bff;
       color: white;
-      border: none;
       border-radius: 5px;
-      cursor: pointer;
     }
   </style>
 </head>
 <body>
   <div id="controls">
-    <button onclick="startTracking()">📍 Get My Location</button>
+    <button onclick="askLocation()">📍 Get My Location</button>
   </div>
   <div id="map"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/ol@6.15.1/dist/ol.js"></script>
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
   <script>
-    // Setup Map
-    const map = new ol.Map({
-      target: 'map',
-      layers: [
-        new ol.layer.Tile({
-          source: new ol.source.OSM()
-        })
-      ],
-      view: new ol.View({
-        center: ol.proj.fromLonLat([3.164972, 36.709639]),
-        zoom: 19,
-        maxZoom: 22
-      })
+    const map = L.map('map', {
+      center: [36.709639, 3.164972],
+      zoom: 19,
+      maxZoom: 22,
+      minZoom: 2
     });
 
-    // Reference point for the Hartmann grid
+    // Map tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 22
+    }).addTo(map);
+
+    // Add scale line
+    L.control.scale({ imperial: false }).addTo(map);
+
     const refLat = 36.709639;
     const refLon = 3.164972;
-    const meterToDegLat = 1 / 111320;
+    const meterToDegreeLat = 1 / 111320;
 
-    function meterToDegLon(lat) {
+    function getMeterToDegreeLon(lat) {
       return 1 / (111320 * Math.cos(lat * Math.PI / 180));
     }
 
-    const gridSource = new ol.source.Vector();
-    const gridLayer = new ol.layer.Vector({
-      source: gridSource,
-      style: new ol.style.Style({
-        stroke: new ol.style.Stroke({ color: '#00ff00', width: 0.5 })
-      })
-    });
-    map.addLayer(gridLayer);
+    const gridLayer = L.layerGroup().addTo(map);
 
     function drawGrid() {
-      gridSource.clear();
-      const zoom = map.getView().getZoom();
+      gridLayer.clearLayers();
+
+      const zoom = map.getZoom();
       if (zoom < 17) return;
 
-      const extent = ol.proj.transformExtent(map.getView().calculateExtent(map.getSize()), 'EPSG:3857', 'EPSG:4326');
-      const [lonMin, latMin, lonMax, latMax] = extent;
-      const centerLat = ol.proj.toLonLat(map.getView().getCenter())[1];
+      const bounds = map.getBounds();
+      const latMin = bounds.getSouth();
+      const latMax = bounds.getNorth();
+      const lonMin = bounds.getWest();
+      const lonMax = bounds.getEast();
 
-      const spacingLat = 2 * meterToDegLat;
-      const spacingLon = 2 * meterToDegLon(centerLat);
+      const spacingLat = 2 * meterToDegreeLat;
+      const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
 
-      // Horizontal lines
       for (let lat = refLat; lat < latMax; lat += spacingLat) {
-        if (lat > latMin) addGridLine([[lonMin, lat], [lonMax, lat]]);
-      }
-      for (let lat = refLat; lat > latMin; lat -= spacingLat) {
-        if (lat < latMax) addGridLine([[lonMin, lat], [lonMax, lat]]);
-      }
-
-      // Vertical lines
-      for (let lon = refLon; lon < lonMax; lon += spacingLon) {
-        if (lon > lonMin) addGridLine([[lon, latMin], [lon, latMax]]);
-      }
-      for (let lon = refLon; lon > lonMin; lon -= spacingLon) {
-        if (lon < lonMax) addGridLine([[lon, latMin], [lon, latMax]]);
-      }
-    }
-
-    function addGridLine(coords) {
-      const line = new ol.geom.LineString(coords.map(c => ol.proj.fromLonLat(c)));
-      gridSource.addFeature(new ol.Feature({ geometry: line }));
-    }
-
-    map.on('moveend', () => setTimeout(drawGrid, 200));
-    drawGrid();
-
-    // User location tracking
-    const userFeature = new ol.Feature(new ol.geom.Point(ol.proj.fromLonLat([3.164972, 36.709639])));
-    userFeature.setStyle(new ol.style.Style({
-      image: new ol.style.Icon({
-        src: 'https://cdn-icons-png.flaticon.com/512/684/684908.png',
-        scale: 0.05
-      })
-    }));
-
-    const userLayer = new ol.layer.Vector({
-      source: new ol.source.Vector({ features: [userFeature] })
-    });
-    map.addLayer(userLayer);
-
-    function startTracking() {
-      if (!navigator.geolocation) return alert('Geolocation not supported');
-
-      navigator.geolocation.watchPosition(
-        pos => {
-          const [lon, lat] = [pos.coords.longitude, pos.coords.latitude];
-          const coord = ol.proj.fromLonLat([lon, lat]);
-          userFeature.getGeometry().setCoordinates(coord);
-        },
-        err => alert("Location error: " + err.message),
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 5000
+        if (lat > latMin) {
+          L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
         }
-      );
+      }
+
+      for (let lat = refLat; lat > latMin; lat -= spacingLat) {
+        if (lat < latMax) {
+          L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+      }
+
+      for (let lon = refLon; lon < lonMax; lon += spacingLon) {
+        if (lon > lonMin) {
+          L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+      }
+
+      for (let lon = refLon; lon > lonMin; lon -= spacingLon) {
+        if (lon < lonMax) {
+          L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+      }
+    }
+
+    // Throttle redraw
+    let gridTimeout;
+    function scheduleGridRedraw() {
+      if (gridTimeout) clearTimeout(gridTimeout);
+      gridTimeout = setTimeout(drawGrid, 300);
+    }
+
+    map.on('moveend zoomend', scheduleGridRedraw);
+    scheduleGridRedraw();
+
+    // User marker
+    let userMarker = L.marker([0, 0], {
+      icon: L.icon({
+        iconUrl: 'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41]
+      })
+    }).addTo(map).bindPopup("📍 Your location");
+
+    function askLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+
+            userMarker.setLatLng([lat, lon]);
+            userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+            userMarker.openPopup();
+
+            // Optional: center map once
+            // map.setView([lat, lon], map.getZoom());
+          },
+          (err) => {
+            alert("Error getting location: " + err.message);
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 5000,
+            timeout: 10000
+          }
+        );
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
     }
   </script>
 </body>

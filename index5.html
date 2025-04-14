@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hartmann Grid with CesiumJS</title>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <style>
+    html, body, #cesiumContainer {
+      width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
+    }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1;
+      background: white;
+      padding: 8px 12px;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-family: sans-serif;
+    }
+    button {
+      padding: 6px 10px;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
+      background: #007bff;
+      color: white;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button onclick="askLocation()">📍 Get My Location</button>
+  </div>
+  <div id="cesiumContainer"></div>
+
+  <script>
+    // Initialize the Cesium Viewer
+    const viewer = new Cesium.Viewer('cesiumContainer', {
+      terrainProvider: Cesium.createWorldTerrain(),
+      baseLayerPicker: false,
+      geocoder: false
+    });
+
+    const refLat = 36.709639;
+    const refLon = 3.164972;
+    const spacingMeters = 2; // 2 meters grid spacing
+
+    function drawHartmannGrid(centerLat, centerLon, width = 200, height = 200) {
+      const lineColor = Cesium.Color.LIMEGREEN.withAlpha(0.6);
+      const gridLines = [];
+
+      const latSpacing = spacingMeters / 111320;
+      const lonSpacing = spacingMeters / (111320 * Math.cos(centerLat * Math.PI / 180));
+
+      const latStart = centerLat - (height / 2) * latSpacing;
+      const lonStart = centerLon - (width / 2) * lonSpacing;
+
+      for (let i = 0; i <= height; i++) {
+        const lat = latStart + i * latSpacing;
+        gridLines.push(viewer.entities.add({
+          polyline: {
+            positions: Cesium.Cartesian3.fromDegreesArray([lonStart, lat, lonStart + width * lonSpacing, lat]),
+            width: 1,
+            material: lineColor
+          }
+        }));
+      }
+
+      for (let j = 0; j <= width; j++) {
+        const lon = lonStart + j * lonSpacing;
+        gridLines.push(viewer.entities.add({
+          polyline: {
+            positions: Cesium.Cartesian3.fromDegreesArray([lon, latStart, lon, latStart + height * latSpacing]),
+            width: 1,
+            material: lineColor
+          }
+        }));
+      }
+    }
+
+    drawHartmannGrid(refLat, refLon);
+
+    let userEntity;
+    function askLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(position => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+
+          if (!userEntity) {
+            userEntity = viewer.entities.add({
+              position: Cesium.Cartesian3.fromDegrees(lon, lat),
+              point: {
+                pixelSize: 10,
+                color: Cesium.Color.BLUE,
+                outlineColor: Cesium.Color.WHITE,
+                outlineWidth: 2
+              },
+              label: {
+                text: `You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`,
+                font: '14px sans-serif',
+                fillColor: Cesium.Color.BLACK,
+                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                outlineWidth: 2,
+                verticalOrigin: Cesium.VerticalOrigin.TOP,
+                pixelOffset: new Cesium.Cartesian2(0, -20)
+              }
+            });
+          } else {
+            userEntity.position = Cesium.Cartesian3.fromDegrees(lon, lat);
+            userEntity.label.text = `You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+          }
+
+          viewer.camera.flyTo({
+            destination: Cesium.Cartesian3.fromDegrees(lon, lat, 80)
+          });
+        }, error => {
+          alert("Error getting location: " + error.message);
+        }, {
+          enableHighAccuracy: true,
+          maximumAge: 5000,
+          timeout: 10000
+        });
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
+    }
+  </script>
+</body>
+</html>

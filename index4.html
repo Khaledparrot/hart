@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Hartmann Grid with OpenLayers</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@6.15.1/ol.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@6.15.1/ol.css">
   <style>
     html, body { margin: 0; padding: 0; height: 100%; }
     #map { width: 100%; height: 100%; }
@@ -12,21 +12,21 @@
       top: 10px;
       left: 50%;
       transform: translateX(-50%);
-      z-index: 999;
+      z-index: 1000;
       background: white;
-      padding: 8px 12px;
+      padding: 10px;
       border-radius: 10px;
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 2px 5px rgba(0,0,0,0.3);
       font-family: sans-serif;
     }
     button {
-      padding: 6px 10px;
-      font-size: 16px;
-      cursor: pointer;
-      border: none;
+      padding: 6px 12px;
+      font-size: 14px;
       background: #007bff;
       color: white;
+      border: none;
       border-radius: 5px;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -38,6 +38,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/ol@6.15.1/dist/ol.js"></script>
   <script>
+    // Setup Map
     const map = new ol.Map({
       target: 'map',
       layers: [
@@ -52,11 +53,12 @@
       })
     });
 
+    // Reference point for the Hartmann grid
     const refLat = 36.709639;
     const refLon = 3.164972;
-    const meterToDegreeLat = 1 / 111320;
+    const meterToDegLat = 1 / 111320;
 
-    function meterToDegreeLon(lat) {
+    function meterToDegLon(lat) {
       return 1 / (111320 * Math.cos(lat * Math.PI / 180));
     }
 
@@ -71,66 +73,42 @@
 
     function drawGrid() {
       gridSource.clear();
-
       const zoom = map.getView().getZoom();
       if (zoom < 17) return;
 
-      const extent = ol.proj.transformExtent(
-        map.getView().calculateExtent(map.getSize()),
-        'EPSG:3857',
-        'EPSG:4326'
-      );
-
+      const extent = ol.proj.transformExtent(map.getView().calculateExtent(map.getSize()), 'EPSG:3857', 'EPSG:4326');
       const [lonMin, latMin, lonMax, latMax] = extent;
-      const center = ol.proj.toLonLat(map.getView().getCenter());
-      const spacingLat = 2 * meterToDegreeLat;
-      const spacingLon = 2 * meterToDegreeLon(center[1]);
+      const centerLat = ol.proj.toLonLat(map.getView().getCenter())[1];
 
+      const spacingLat = 2 * meterToDegLat;
+      const spacingLon = 2 * meterToDegLon(centerLat);
+
+      // Horizontal lines
       for (let lat = refLat; lat < latMax; lat += spacingLat) {
-        if (lat > latMin) {
-          const line = new ol.geom.LineString([
-            ol.proj.fromLonLat([lonMin, lat]),
-            ol.proj.fromLonLat([lonMax, lat])
-          ]);
-          gridSource.addFeature(new ol.Feature({ geometry: line }));
-        }
+        if (lat > latMin) addGridLine([[lonMin, lat], [lonMax, lat]]);
       }
-
       for (let lat = refLat; lat > latMin; lat -= spacingLat) {
-        if (lat < latMax) {
-          const line = new ol.geom.LineString([
-            ol.proj.fromLonLat([lonMin, lat]),
-            ol.proj.fromLonLat([lonMax, lat])
-          ]);
-          gridSource.addFeature(new ol.Feature({ geometry: line }));
-        }
+        if (lat < latMax) addGridLine([[lonMin, lat], [lonMax, lat]]);
       }
 
+      // Vertical lines
       for (let lon = refLon; lon < lonMax; lon += spacingLon) {
-        if (lon > lonMin) {
-          const line = new ol.geom.LineString([
-            ol.proj.fromLonLat([lon, latMin]),
-            ol.proj.fromLonLat([lon, latMax])
-          ]);
-          gridSource.addFeature(new ol.Feature({ geometry: line }));
-        }
+        if (lon > lonMin) addGridLine([[lon, latMin], [lon, latMax]]);
       }
-
       for (let lon = refLon; lon > lonMin; lon -= spacingLon) {
-        if (lon < lonMax) {
-          const line = new ol.geom.LineString([
-            ol.proj.fromLonLat([lon, latMin]),
-            ol.proj.fromLonLat([lon, latMax])
-          ]);
-          gridSource.addFeature(new ol.Feature({ geometry: line }));
-        }
+        if (lon < lonMax) addGridLine([[lon, latMin], [lon, latMax]]);
       }
+    }
+
+    function addGridLine(coords) {
+      const line = new ol.geom.LineString(coords.map(c => ol.proj.fromLonLat(c)));
+      gridSource.addFeature(new ol.Feature({ geometry: line }));
     }
 
     map.on('moveend', () => setTimeout(drawGrid, 200));
     drawGrid();
 
-    // User location
+    // User location tracking
     const userFeature = new ol.Feature(new ol.geom.Point(ol.proj.fromLonLat([3.164972, 36.709639])));
     userFeature.setStyle(new ol.style.Style({
       image: new ol.style.Icon({
@@ -140,28 +118,20 @@
     }));
 
     const userLayer = new ol.layer.Vector({
-      source: new ol.source.Vector({
-        features: [userFeature]
-      })
+      source: new ol.source.Vector({ features: [userFeature] })
     });
     map.addLayer(userLayer);
 
     function startTracking() {
-      if (!navigator.geolocation) {
-        alert('Geolocation not supported!');
-        return;
-      }
+      if (!navigator.geolocation) return alert('Geolocation not supported');
 
       navigator.geolocation.watchPosition(
-        (pos) => {
-          const lon = pos.coords.longitude;
-          const lat = pos.coords.latitude;
-          const coords = ol.proj.fromLonLat([lon, lat]);
-          userFeature.getGeometry().setCoordinates(coords);
+        pos => {
+          const [lon, lat] = [pos.coords.longitude, pos.coords.latitude];
+          const coord = ol.proj.fromLonLat([lon, lat]);
+          userFeature.getGeometry().setCoordinates(coord);
         },
-        (err) => {
-          alert("Location error: " + err.message);
-        },
+        err => alert("Location error: " + err.message),
         {
           enableHighAccuracy: true,
           timeout: 10000,

@@ -112,6 +112,11 @@
 
     let userMarker = L.marker([0, 0]).addTo(map).bindPopup("📍 Your location");
 
+    // Store the last known location to avoid unnecessary updates
+    let lastLat = null;
+    let lastLon = null;
+    const locationThreshold = 0.00005; // 5 cm threshold to avoid too frequent updates
+
     function askLocation() {
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
@@ -119,17 +124,27 @@
             const lat = position.coords.latitude;
             const lon = position.coords.longitude;
 
-            userMarker.setLatLng([lat, lon]);
-            userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
-            userMarker.openPopup();
+            // Only update if location has changed significantly
+            const latDiff = Math.abs(lat - lastLat);
+            const lonDiff = Math.abs(lon - lastLon);
 
-            // Center map to the user's location
-            map.setView([lat, lon], map.getZoom());
+            if (latDiff > locationThreshold || lonDiff > locationThreshold) {
+              userMarker.setLatLng([lat, lon]);
+              userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+              userMarker.openPopup();
 
-            // Check if user is near a grid crossing (e.g., within 2 meters)
-            const distance = calculateDistance(lat, lon, refLat, refLon);
-            if (distance < 2) {
-              alert("You are near a Hartmann grid crossing point! Please stay away for your health.");
+              // Center map to the user's location
+              map.setView([lat, lon], map.getZoom());
+
+              // Update last known location
+              lastLat = lat;
+              lastLon = lon;
+
+              // Check if user is near a grid crossing (e.g., within 2 meters)
+              const distance = calculateDistance(lat, lon, refLat, refLon);
+              if (distance < 2) {
+                alert("You are near a Hartmann grid crossing point! Please stay away for your health.");
+              }
             }
           },
           (err) => {

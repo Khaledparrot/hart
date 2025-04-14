@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Real-Time Location Tracking</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <style>
+    html, body, #map { height: 100%; margin: 0; padding: 0; }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 999;
+      background: white;
+      padding: 8px 12px;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    button {
+      padding: 6px 10px;
+      font-size: 16px;
+      cursor: pointer;
+      border: none;
+      background: #007bff;
+      color: white;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button onclick="askLocation()">📍 Get My Location</button>
+    <button onclick="approveLocation()">✅ Approve Location</button>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map', {
+      center: [36.709639, 3.164972],
+      zoom: 19,
+      maxZoom: 22,
+      minZoom: 2
+    });
+
+    // Tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 22
+    }).addTo(map);
+
+    let userMarker = L.marker([0, 0]).addTo(map).bindPopup("📍 Your location");
+    let userLat = null;
+    let userLon = null;
+    let manualLocationApproved = false;
+
+    function askLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((position) => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          const accuracy = position.coords.accuracy;
+
+          if (accuracy < 5) {
+            userLat = lat;
+            userLon = lon;
+            userMarker.setLatLng([lat, lon]);
+            userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+            userMarker.openPopup();
+          } else {
+            alert("GPS accuracy is too low. Please move to an open area for better accuracy.");
+          }
+        }, (err) => {
+          alert("Error getting location: " + err.message);
+        }, {
+          enableHighAccuracy: true,
+          maximumAge: 5000,
+          timeout: 10000
+        });
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
+    }
+
+    // Allow user to click on the map to set their location
+    map.on('click', function(e) {
+      if (!manualLocationApproved && userLat && userLon) {
+        userLat = e.latlng.lat;
+        userLon = e.latlng.lng;
+        userMarker.setLatLng([userLat, userLon]);
+        userMarker.setPopupContent(`📍 Defined Location: ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`);
+        userMarker.openPopup();
+      }
+    });
+
+    // Approve the location and switch to gyroscope tracking
+    function approveLocation() {
+      if (userLat && userLon) {
+        manualLocationApproved = true;
+        userMarker.setPopupContent(`📍 Approved Location: ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`);
+        userMarker.openPopup();
+        startGyroscopeTracking();
+      } else {
+        alert("Please define your location first by clicking on the map.");
+      }
+    }
+
+    // Gyroscope real-time tracking simulation
+    function startGyroscopeTracking() {
+      if (!manualLocationApproved) {
+        alert("Please approve the location first.");
+        return;
+      }
+
+      // Mockup function to simulate gyroscope data (replace with actual gyroscope API)
+      function updateLocationFromGyroscope() {
+        if (userLat && userLon) {
+          const randomLatOffset = (Math.random() - 0.5) * 0.0001; // Simulate some movement
+          const randomLonOffset = (Math.random() - 0.5) * 0.0001;
+
+          userLat += randomLatOffset;
+          userLon += randomLonOffset;
+
+          userMarker.setLatLng([userLat, userLon]);
+          userMarker.setPopupContent(`📍 You: ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`);
+        }
+      }
+
+      // Update every 3 seconds
+      setInterval(updateLocationFromGyroscope, 3000);
+    }
+  </script>
+</body>
+</html>

@@ -2,25 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Hartmann Grid with CesiumJS</title>
-  <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
-  <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <title>Hartmann Grid - Cesium 2D</title>
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.109/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.109/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
   <style>
     html, body, #cesiumContainer {
       width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
+      font-family: sans-serif;
     }
     #controls {
       position: absolute;
-      top: 10px;
-      left: 50%;
+      top: 10px; left: 50%;
       transform: translateX(-50%);
-      z-index: 1;
+      z-index: 999;
       background: white;
       padding: 8px 12px;
       border-radius: 10px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.2);
-      font-family: sans-serif;
     }
     button {
       padding: 6px 10px;
@@ -40,95 +38,149 @@
   <div id="cesiumContainer"></div>
 
   <script>
-    // Initialize the Cesium Viewer
+    // Initialize Cesium viewer in 2D mode
     const viewer = new Cesium.Viewer('cesiumContainer', {
-      terrainProvider: Cesium.createWorldTerrain(),
-      baseLayerPicker: false,
-      geocoder: false
+      sceneMode: Cesium.SceneMode.SCENE2D,
+      baseLayerPicker: true,
+      geocoder: false,
+      animation: false,
+      timeline: false,
+      navigationHelpButton: false,
+      sceneModePicker: false,
+      shouldAnimate: true
     });
 
+    // Hartmann Grid Setup
     const refLat = 36.709639;
     const refLon = 3.164972;
-    const spacingMeters = 2; // 2 meters grid spacing
+    const spacing = 2; // meters
+    const metersPerDegreeLat = 111320;
 
-    function drawHartmannGrid(centerLat, centerLon, width = 200, height = 200) {
-      const lineColor = Cesium.Color.LIMEGREEN.withAlpha(0.6);
-      const gridLines = [];
+    function metersToDegreesLat(meters) {
+      return meters / metersPerDegreeLat;
+    }
 
-      const latSpacing = spacingMeters / 111320;
-      const lonSpacing = spacingMeters / (111320 * Math.cos(centerLat * Math.PI / 180));
+    function metersToDegreesLon(meters, lat) {
+      return meters / (111320 * Math.cos(Cesium.Math.toRadians(lat)));
+    }
 
-      const latStart = centerLat - (height / 2) * latSpacing;
-      const lonStart = centerLon - (width / 2) * lonSpacing;
+    function drawGrid() {
+      const bounds = viewer.camera.computeViewRectangle();
+      if (!bounds) return;
 
-      for (let i = 0; i <= height; i++) {
-        const lat = latStart + i * latSpacing;
-        gridLines.push(viewer.entities.add({
-          polyline: {
-            positions: Cesium.Cartesian3.fromDegreesArray([lonStart, lat, lonStart + width * lonSpacing, lat]),
-            width: 1,
-            material: lineColor
-          }
-        }));
+      const latMin = Cesium.Math.toDegrees(bounds.south);
+      const latMax = Cesium.Math.toDegrees(bounds.north);
+      const lonMin = Cesium.Math.toDegrees(bounds.west);
+      const lonMax = Cesium.Math.toDegrees(bounds.east);
+      const centerLat = (latMin + latMax) / 2;
+
+      const deltaLat = metersToDegreesLat(spacing);
+      const deltaLon = metersToDegreesLon(spacing, centerLat);
+
+      // Clear old grid
+      viewer.entities.removeAll();
+
+      for (let lat = refLat; lat < latMax; lat += deltaLat) {
+        if (lat > latMin) {
+          viewer.entities.add({
+            polyline: {
+              positions: Cesium.Cartesian3.fromDegreesArray([lonMin, lat, lonMax, lat]),
+              width: 0.5,
+              material: Cesium.Color.LIME
+            }
+          });
+        }
+      }
+      for (let lat = refLat; lat > latMin; lat -= deltaLat) {
+        if (lat < latMax) {
+          viewer.entities.add({
+            polyline: {
+              positions: Cesium.Cartesian3.fromDegreesArray([lonMin, lat, lonMax, lat]),
+              width: 0.5,
+              material: Cesium.Color.LIME
+            }
+          });
+        }
       }
 
-      for (let j = 0; j <= width; j++) {
-        const lon = lonStart + j * lonSpacing;
-        gridLines.push(viewer.entities.add({
-          polyline: {
-            positions: Cesium.Cartesian3.fromDegreesArray([lon, latStart, lon, latStart + height * latSpacing]),
-            width: 1,
-            material: lineColor
-          }
-        }));
+      for (let lon = refLon; lon < lonMax; lon += deltaLon) {
+        if (lon > lonMin) {
+          viewer.entities.add({
+            polyline: {
+              positions: Cesium.Cartesian3.fromDegreesArray([lon, latMin, lon, latMax]),
+              width: 0.5,
+              material: Cesium.Color.LIME
+            }
+          });
+        }
+      }
+      for (let lon = refLon; lon > lonMin; lon -= deltaLon) {
+        if (lon < lonMax) {
+          viewer.entities.add({
+            polyline: {
+              positions: Cesium.Cartesian3.fromDegreesArray([lon, latMin, lon, latMax]),
+              width: 0.5,
+              material: Cesium.Color.LIME
+            }
+          });
+        }
       }
     }
 
-    drawHartmannGrid(refLat, refLon);
+    viewer.scene.camera.moveEnd.addEventListener(() => {
+      drawGrid();
+    });
 
+    drawGrid();
+
+    // Location tracking
     let userEntity;
+
     function askLocation() {
       if (navigator.geolocation) {
-        navigator.geolocation.watchPosition(position => {
-          const lat = position.coords.latitude;
-          const lon = position.coords.longitude;
+        navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
 
-          if (!userEntity) {
-            userEntity = viewer.entities.add({
-              position: Cesium.Cartesian3.fromDegrees(lon, lat),
-              point: {
-                pixelSize: 10,
-                color: Cesium.Color.BLUE,
-                outlineColor: Cesium.Color.WHITE,
-                outlineWidth: 2
-              },
-              label: {
-                text: `You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`,
-                font: '14px sans-serif',
-                fillColor: Cesium.Color.BLACK,
-                style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-                outlineWidth: 2,
-                verticalOrigin: Cesium.VerticalOrigin.TOP,
-                pixelOffset: new Cesium.Cartesian2(0, -20)
-              }
+            if (!userEntity) {
+              userEntity = viewer.entities.add({
+                position: Cesium.Cartesian3.fromDegrees(lon, lat),
+                point: {
+                  pixelSize: 10,
+                  color: Cesium.Color.BLUE,
+                },
+                label: {
+                  text: `📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`,
+                  font: "14px sans-serif",
+                  fillColor: Cesium.Color.WHITE,
+                  style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                  outlineWidth: 2,
+                  verticalOrigin: Cesium.VerticalOrigin.TOP,
+                  pixelOffset: new Cesium.Cartesian2(0, -15)
+                }
+              });
+            } else {
+              userEntity.position = Cesium.Cartesian3.fromDegrees(lon, lat);
+              userEntity.label.text = `📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+            }
+
+            // Center map once
+            viewer.camera.flyTo({
+              destination: Cesium.Cartesian3.fromDegrees(lon, lat, 1000)
             });
-          } else {
-            userEntity.position = Cesium.Cartesian3.fromDegrees(lon, lat);
-            userEntity.label.text = `You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+          },
+          (err) => {
+            alert("Geolocation error: " + err.message);
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 5000,
+            timeout: 10000
           }
-
-          viewer.camera.flyTo({
-            destination: Cesium.Cartesian3.fromDegrees(lon, lat, 80)
-          });
-        }, error => {
-          alert("Error getting location: " + error.message);
-        }, {
-          enableHighAccuracy: true,
-          maximumAge: 5000,
-          timeout: 10000
-        });
+        );
       } else {
-        alert("Geolocation is not supported by this browser.");
+        alert("Geolocation is not supported.");
       }
     }
   </script>

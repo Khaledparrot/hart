@@ -153,7 +153,6 @@
       roomPolygon = L.polygon(roomCorners, { color: 'blue', fillOpacity: 0.1 }).addTo(map);
     }
 
-    // ✅ FIXED THIS FUNCTION:
     function findNodesInsideRoom() {
       nodeLayer.clearLayers();
       measurementLayer.clearLayers();
@@ -166,8 +165,11 @@
       const lonMin = bounds.getWest();
       const lonMax = bounds.getEast();
 
-      for (let lat = refLat; lat < latMax; lat += spacingLat) {
-        for (let lon = refLon; lon < lonMax; lon += spacingLon) {
+      const latStart = Math.floor((latMin - refLat) / spacingLat) * spacingLat + refLat;
+      const lonStart = Math.floor((lonMin - refLon) / spacingLon) * spacingLon + refLon;
+
+      for (let lat = latStart; lat <= latMax; lat += spacingLat) {
+        for (let lon = lonStart; lon <= lonMax; lon += spacingLon) {
           const point = L.latLng(lat, lon);
           if (roomPolygon.contains(point)) {
             const marker = L.circleMarker([lat, lon], {

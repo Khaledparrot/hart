@@ -2,10 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Hartmann Grid Detector</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hartmann Grid Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; }
     #controls {
@@ -15,7 +15,7 @@
       transform: translateX(-50%);
       z-index: 1000;
       background: white;
-      padding: 8px 12px;
+      padding: 10px;
       border-radius: 8px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.2);
     }
@@ -23,185 +23,162 @@
       padding: 6px 10px;
       font-size: 14px;
       margin: 4px;
-      cursor: pointer;
+      border-radius: 5px;
       background-color: #007bff;
       color: white;
       border: none;
-      border-radius: 5px;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <div id="controls">
-    <button onclick="startDraw()">✏️ Draw Room</button>
-    <button onclick="clearAll()">🧹 Clear All</button>
-  </div>
-  <div id="map"></div>
+<div id="controls">
+  <button onclick="askLocation()">📍 Get Location</button>
+  <button onclick="startDrawing()">✏️ Draw Room</button>
+  <button onclick="showIntersections()" id="showBtn" style="display:none;">🔴 Show Intersections on Room</button>
+  <button onclick="clearRoom()" id="clearBtn" style="display:none;">🧹 Clear Room and Nodes</button>
+</div>
+<div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script>
+const map = L.map('map').setView([36.709639, 3.164972], 19);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap & CartoDB'
+}).addTo(map);
 
-  <script>
-    const map = L.map('map').setView([36.709639, 3.164972], 19);
-    const meterToDegLat = 1 / 111320;
-    const refLat = 36.709639;
-    const refLon = 3.164972;
+const refLat = 36.709639;
+const refLon = 3.164972;
+const meterToDegLat = 1 / 111320;
+let drawnShape = null;
+let redNodes = [];
+const nodeLayer = L.layerGroup().addTo(map);
+const gridLayer = L.layerGroup().addTo(map);
+const drawnItems = new L.FeatureGroup().addTo(map);
 
-    function getMeterToDegLon(lat) {
-      return 1 / (111320 * Math.cos(lat * Math.PI / 180));
-    }
+// Get longitude scale based on latitude
+function getMeterToDegLon(lat) {
+  return 1 / (111320 * Math.cos(lat * Math.PI / 180));
+}
 
-    const gridLayer = L.layerGroup().addTo(map);
-    const nodeLayer = L.layerGroup().addTo(map);
-    const shapeLayer = L.featureGroup().addTo(map);
-    const measurementLayer = L.layerGroup().addTo(map);
+// Draw the Hartmann grid globally
+function drawGrid() {
+  const bounds = map.getBounds();
+  const spacingLat = 2 * meterToDegLat;
+  const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
+  const latMin = bounds.getSouth();
+  const latMax = bounds.getNorth();
+  const lonMin = bounds.getWest();
+  const lonMax = bounds.getEast();
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 22,
-      attribution: '&copy; OpenStreetMap & CartoDB'
-    }).addTo(map);
+  gridLayer.clearLayers();
+  for (let lat = refLat; lat < latMax; lat += spacingLat)
+    if (lat > latMin) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
+  for (let lat = refLat; lat > latMin; lat -= spacingLat)
+    if (lat < latMax) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
+  for (let lon = refLon; lon < lonMax; lon += spacingLon)
+    if (lon > lonMin) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
+  for (let lon = refLon; lon > lonMin; lon -= spacingLon)
+    if (lon < lonMax) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
+}
+map.on('moveend zoomend', drawGrid);
+drawGrid();
 
-    function drawHartmannGrid() {
-      gridLayer.clearLayers();
-      const zoom = map.getZoom();
-      if (zoom < 16) return;
+function askLocation() {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      map.setView([pos.coords.latitude, pos.coords.longitude], 20);
+    }, err => alert("Geolocation error: " + err.message), {enableHighAccuracy: true});
+  }
+}
 
-      const bounds = map.getBounds();
-      const latMin = bounds.getSouth(), latMax = bounds.getNorth();
-      const lonMin = bounds.getWest(), lonMax = bounds.getEast();
+const drawControl = new L.Control.Draw({
+  draw: {
+    polygon: {
+      allowIntersection: false,
+      showArea: true
+    },
+    polyline: false,
+    rectangle: false,
+    circle: false,
+    marker: false,
+    circlemarker: false
+  },
+  edit: {
+    featureGroup: drawnItems,
+    remove: true
+  }
+});
+map.addControl(drawControl);
 
-      const spacingLat = 2 * meterToDegLat;
-      const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
+function startDrawing() {
+  document.querySelector('#showBtn').style.display = 'none';
+  document.querySelector('#clearBtn').style.display = 'none';
+}
 
-      for (let lat = refLat; lat < latMax; lat += spacingLat)
-        if (lat > latMin) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#0f0', weight: 0.5}));
-      for (let lat = refLat; lat > latMin; lat -= spacingLat)
-        if (lat < latMax) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#0f0', weight: 0.5}));
-      for (let lon = refLon; lon < lonMax; lon += spacingLon)
-        if (lon > lonMin) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#0f0', weight: 0.5}));
-      for (let lon = refLon; lon > lonMin; lon -= spacingLon)
-        if (lon < lonMax) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#0f0', weight: 0.5}));
-    }
+map.on('draw:created', function (e) {
+  if (drawnShape) {
+    drawnItems.clearLayers();
+    nodeLayer.clearLayers();
+    redNodes = [];
+  }
 
-    map.on('moveend zoomend', () => setTimeout(drawHartmannGrid, 300));
-    drawHartmannGrid();
+  drawnShape = e.layer;
+  drawnItems.addLayer(drawnShape);
+  document.querySelector('#showBtn').style.display = 'inline';
+  document.querySelector('#clearBtn').style.display = 'inline';
+});
 
-    const drawControl = new L.Control.Draw({
-      draw: {
-        polygon: true,
-        polyline: false,
-        rectangle: false,
-        circle: false,
-        marker: false,
-        circlemarker: false
-      },
-      edit: {
-        featureGroup: shapeLayer
-      }
-    });
+function showIntersections() {
+  if (!drawnShape) return;
 
-    function startDraw() {
-      map.addControl(drawControl);
-    }
+  nodeLayer.clearLayers();
+  redNodes = [];
 
-    map.on(L.Draw.Event.CREATED, function (e) {
-      clearAll();
-      const layer = e.layer;
-      shapeLayer.addLayer(layer);
-      const shapeLatLngs = layer.getLatLngs()[0];
-      showRedNodesInShape(shapeLatLngs);
-    });
+  const shape = drawnShape.getLatLngs()[0];
+  const spacingLat = 2 * meterToDegLat;
+  const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
+  const bounds = drawnShape.getBounds();
 
-    function clearAll() {
-      shapeLayer.clearLayers();
-      nodeLayer.clearLayers();
-      measurementLayer.clearLayers();
-    }
-
-    function showRedNodesInShape(polygonLatLngs) {
-      nodeLayer.clearLayers();
-      measurementLayer.clearLayers();
-
-      const bounds = shapeLayer.getBounds();
-      const spacingLat = 2 * meterToDegLat;
-      const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
-
-      const latMin = bounds.getSouth();
-      const latMax = bounds.getNorth();
-      const lonMin = bounds.getWest();
-      const lonMax = bounds.getEast();
-
-      for (let lat = refLat; lat < latMax; lat += spacingLat) {
-        for (let lon = refLon; lon < lonMax; lon += spacingLon) {
-          const point = L.latLng(lat, lon);
-          if (pointInsidePolygon(point, polygonLatLngs)) {
-            const marker = L.circleMarker(point, {
-              color: 'red',
-              radius: 5,
-              fillOpacity: 1
-            }).addTo(nodeLayer);
-            marker.on('click', () => showPerpendiculars(point, polygonLatLngs));
-          }
-        }
-      }
-    }
-
-    function pointInsidePolygon(point, vs) {
-      let x = point.lat, y = point.lng;
-      let inside = false;
-      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-        const xi = vs[i].lat, yi = vs[i].lng;
-        const xj = vs[j].lat, yj = vs[j].lng;
-        const intersect = ((yi > y) !== (yj > y)) &&
-          (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-        if (intersect) inside = !inside;
-      }
-      return inside;
-    }
-
-    function showPerpendiculars(node, polygonLatLngs) {
-      measurementLayer.clearLayers();
-      for (let i = 0; i < polygonLatLngs.length; i++) {
-        const a = polygonLatLngs[i];
-        const b = polygonLatLngs[(i + 1) % polygonLatLngs.length];
-        const closest = closestPointOnSegment(node, a, b);
-        measurementLayer.addLayer(L.polyline([node, closest], { color: 'purple' }));
-
-        const dist = haversineDistance(node, closest).toFixed(2);
-        const mid = [(node.lat + closest.lat) / 2, (node.lng + closest.lng) / 2];
-        L.marker(mid, {
-          icon: L.divIcon({
-            className: '',
-            html: `<div style="font-size:12px;color:black;background:white;padding:2px;border-radius:4px;">${dist} m</div>`
-          })
-        }).addTo(measurementLayer);
+  for (let lat = refLat; lat < bounds.getNorth(); lat += spacingLat) {
+    for (let lon = refLon; lon < bounds.getEast(); lon += spacingLon) {
+      const point = L.latLng(lat, lon);
+      if (bounds.contains(point) && pointInsidePolygon(point, shape)) {
+        const red = L.circleMarker(point, {
+          color: 'red',
+          fillColor: 'red',
+          radius: 5,
+          fillOpacity: 1
+        }).addTo(nodeLayer);
+        redNodes.push(red);
       }
     }
+  }
+}
 
-    function closestPointOnSegment(p, a, b) {
-      const x = p.lat, y = p.lng;
-      const x1 = a.lat, y1 = a.lng;
-      const x2 = b.lat, y2 = b.lng;
-      const dx = x2 - x1, dy = y2 - y1;
-      const len2 = dx * dx + dy * dy;
-      if (len2 === 0) return a;
-      let t = ((x - x1) * dx + (y - y1) * dy) / len2;
-      t = Math.max(0, Math.min(1, t));
-      return L.latLng(x1 + t * dx, y1 + t * dy);
-    }
+function pointInsidePolygon(point, vs) {
+  let x = point.lat, y = point.lng;
+  let inside = false;
+  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+    const xi = vs[i].lat, yi = vs[i].lng;
+    const xj = vs[j].lat, yj = vs[j].lng;
 
-    function haversineDistance(c1, c2) {
-      const R = 6371000;
-      const toRad = deg => deg * Math.PI / 180;
-      const dLat = toRad(c2.lat - c1.lat);
-      const dLon = toRad(c2.lng - c1.lng);
-      const lat1 = toRad(c1.lat);
-      const lat2 = toRad(c2.lat);
+    const intersect = ((yi > y) !== (yj > y)) &&
+                      (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
 
-      const a = Math.sin(dLat / 2) ** 2 +
-                Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
-      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-    }
-  </script>
+function clearRoom() {
+  drawnItems.clearLayers();
+  nodeLayer.clearLayers();
+  drawnShape = null;
+  redNodes = [];
+  document.querySelector('#showBtn').style.display = 'none';
+  document.querySelector('#clearBtn').style.display = 'none';
+}
+</script>
 </body>
 </html>

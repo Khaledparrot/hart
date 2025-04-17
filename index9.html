@@ -153,6 +153,7 @@
       roomPolygon = L.polygon(roomCorners, { color: 'blue', fillOpacity: 0.1 }).addTo(map);
     }
 
+    // ✅ FIXED THIS FUNCTION:
     function findNodesInsideRoom() {
       nodeLayer.clearLayers();
       measurementLayer.clearLayers();
@@ -168,7 +169,7 @@
       for (let lat = refLat; lat < latMax; lat += spacingLat) {
         for (let lon = refLon; lon < lonMax; lon += spacingLon) {
           const point = L.latLng(lat, lon);
-          if (roomPolygon.getBounds().contains(point) && leafletPointInPolygon(point, roomCorners)) {
+          if (roomPolygon.contains(point)) {
             const marker = L.circleMarker([lat, lon], {
               color: 'red',
               fillColor: 'red',
@@ -184,19 +185,6 @@
       }
     }
 
-    function leafletPointInPolygon(point, vs) {
-      const x = point.lat, y = point.lng;
-      let inside = false;
-      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-        const xi = vs[i][0], yi = vs[i][1];
-        const xj = vs[j][0], yj = vs[j][1];
-        const intersect = ((yi > y) !== (yj > y)) &&
-                          (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-        if (intersect) inside = !inside;
-      }
-      return inside;
-    }
-
     function showNodeDistances(node) {
       measurementLayer.clearLayers();
 
@@ -205,13 +193,11 @@
 
       for (let i = 0; i < 4; i++) {
         const wall = [roomCorners[i], roomCorners[(i + 1) % 4]];
-        const closest = closestPointOnSegment([lon, lat], wall.map(p => [p[1], p[0]])); // [x, y] = [lon, lat]
-        const closestLatLng = [closest[1], closest[0]];
+        const closest = closestPointOnSegment(node, wall);
+        measurementLayer.addLayer(L.polyline([node, closest], { color: 'purple', weight: 2 }));
 
-        measurementLayer.addLayer(L.polyline([node, closestLatLng], { color: 'purple', weight: 2 }));
-
-        const mid = [(lat + closestLatLng[0]) / 2, (lon + closestLatLng[1]) / 2];
-        const dist = haversineDistance(node, closestLatLng).toFixed(2);
+        const mid = [(node[0] + closest[0]) / 2, (node[1] + closest[1]) / 2];
+        const dist = haversineDistance(node, closest).toFixed(2);
         L.marker(mid, {
           icon: L.divIcon({
             className: '',
@@ -221,14 +207,13 @@
       }
     }
 
-    function closestPointOnSegment(p, seg) {
-      const [x, y] = p;
-      const [[x1, y1], [x2, y2]] = seg;
+    function closestPointOnSegment(point, segment) {
+      const [x, y] = point;
+      const [[x1, y1], [x2, y2]] = segment;
       const dx = x2 - x1, dy = y2 - y1;
-      const len2 = dx * dx + dy * dy;
-      if (len2 === 0) return [x1, y1];
-
-      let t = ((x - x1) * dx + (y - y1) * dy) / len2;
+      const l2 = dx*dx + dy*dy;
+      if (l2 === 0) return [x1, y1];
+      let t = ((x - x1) * dx + (y - y1) * dy) / l2;
       t = Math.max(0, Math.min(1, t));
       return [x1 + t * dx, y1 + t * dy];
     }

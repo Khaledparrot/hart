@@ -32,74 +32,164 @@
 </head>
 <body>
   <div id="controls">
-    <button onclick="startRoomSelection()">📐 Select Room</button>
+    <button onclick="askLocation()">📍 Get My Location</button>
+    <button onclick="startRoomDrawing()">📐 Select Room</button>
   </div>
   <div id="map"></div>
 
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-  <script>
-    const map = L.map('map').setView([36.709639, 3.164972], 20);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  <script>
+    const map = L.map('map', {
+      center: [36.709639, 3.164972],
+      zoom: 19,
       maxZoom: 22,
-      attribution: '&copy; OpenStreetMap contributors'
+      minZoom: 2
+    });
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap & CartoDB',
+      maxZoom: 22
     }).addTo(map);
 
     const refLat = 36.709639;
     const refLon = 3.164972;
     const meterToDegLat = 1 / 111320;
+    const gridLayer = L.layerGroup().addTo(map);
+    const nodeLayer = L.layerGroup().addTo(map);
+    const measurementLayer = L.layerGroup().addTo(map);
 
     function getMeterToDegLon(lat) {
       return 1 / (111320 * Math.cos(lat * Math.PI / 180));
     }
 
-    const gridLayer = L.layerGroup().addTo(map);
-    const nodeLayer = L.layerGroup().addTo(map);
-    const distanceLayer = L.layerGroup().addTo(map);
-
     function drawGrid() {
       gridLayer.clearLayers();
+      const zoom = map.getZoom();
+      if (zoom < 16) return;
+
       const spacingLat = 2 * meterToDegLat;
       const spacingLon = 2 * getMeterToDegLon(map.getCenter().lat);
       const bounds = map.getBounds();
+      const latMin = bounds.getSouth();
+      const latMax = bounds.getNorth();
+      const lonMin = bounds.getWest();
+      const lonMax = bounds.getEast();
 
-      for (let lat = refLat; lat < bounds.getNorth(); lat += spacingLat)
-        if (lat > bounds.getSouth()) gridLayer.addLayer(L.polyline([[lat, bounds.getWest()], [lat, bounds.getEast()]], {color: '#00ff00', weight: 0.5}));
-      for (let lon = refLon; lon < bounds.getEast(); lon += spacingLon)
-        if (lon > bounds.getWest()) gridLayer.addLayer(L.polyline([[bounds.getSouth(), lon], [bounds.getNorth(), lon]], {color: '#00ff00', weight: 0.5}));
+      for (let lat = refLat; lat < latMax; lat += spacingLat)
+        if (lat > latMin) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
+      for (let lat = refLat; lat > latMin; lat -= spacingLat)
+        if (lat < latMax) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
+      for (let lon = refLon; lon < lonMax; lon += spacingLon)
+        if (lon > lonMin) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
+      for (let lon = refLon; lon > lonMin; lon -= spacingLon)
+        if (lon < lonMax) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
     }
 
-    map.on('moveend zoomend', drawGrid);
-    drawGrid();
+    let gridTimeout;
+    function scheduleGridRedraw() {
+      if (gridTimeout) clearTimeout(gridTimeout);
+      gridTimeout = setTimeout(drawGrid, 300);
+    }
+
+    map.on('moveend zoomend', scheduleGridRedraw);
+    scheduleGridRedraw();
+
+    let userMarker = null;
+    let userCircle = null;
+    function askLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+
+            if (!userMarker) userMarker = L.marker([lat, lon]).addTo(map);
+            userMarker.setLatLng([lat, lon]);
+            userMarker.bindPopup(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`).openPopup();
+
+            if (userCircle) map.removeLayer(userCircle);
+            userCircle = L.circle([lat, lon], {
+              radius: position.coords.accuracy,
+              color: '#3388ff',
+              fillColor: '#3388ff',
+              fillOpacity: 0.2
+            }).addTo(map);
+          },
+          (err) => alert("Error getting location: " + err.message),
+          { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+        );
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
+    }
 
     let roomCorners = [];
     let roomPolygon = null;
 
-    function startRoomSelection() {
+    function startRoomDrawing() {
       roomCorners = [];
+      if (roomPolygon) {
+        map.removeLayer(roomPolygon);
+        roomPolygon = null;
+      }
       nodeLayer.clearLayers();
-      distanceLayer.clearLayers();
-      if (roomPolygon) map.removeLayer(roomPolygon);
-
-      alert("Click 4 corners of the room (clockwise or counter-clockwise).");
+      measurementLayer.clearLayers();
       map.on('click', captureCorner);
+      alert("Click four corners of your room on the map.");
     }
 
     function captureCorner(e) {
       roomCorners.push([e.latlng.lat, e.latlng.lng]);
       if (roomCorners.length === 4) {
         map.off('click', captureCorner);
-        roomPolygon = L.polygon(roomCorners, { color: 'blue', fillOpacity: 0.1 }).addTo(map);
+        drawRoomPolygon();
         findNodesInsideRoom();
       }
     }
 
-    function pointInPolygon(point, polygon) {
+    function drawRoomPolygon() {
+      if (roomPolygon) map.removeLayer(roomPolygon);
+      roomPolygon = L.polygon(roomCorners, { color: 'blue', fillOpacity: 0.1 }).addTo(map);
+    }
+
+    function findNodesInsideRoom() {
+      nodeLayer.clearLayers();
+      measurementLayer.clearLayers();
+
+      const spacingLat = 2 * meterToDegLat;
+      const spacingLon = 2 * getMeterToDegLon(map.getCenter().lat);
+      const bounds = roomPolygon.getBounds();
+      const latMin = bounds.getSouth();
+      const latMax = bounds.getNorth();
+      const lonMin = bounds.getWest();
+      const lonMax = bounds.getEast();
+
+      for (let lat = refLat; lat < latMax; lat += spacingLat) {
+        for (let lon = refLon; lon < lonMax; lon += spacingLon) {
+          const point = L.latLng(lat, lon);
+          if (roomPolygon.getBounds().contains(point) && leafletPointInPolygon(point, roomCorners)) {
+            const marker = L.circleMarker([lat, lon], {
+              color: 'red',
+              fillColor: 'red',
+              fillOpacity: 1,
+              radius: 5
+            }).addTo(nodeLayer);
+
+            marker.on('click', () => {
+              showNodeDistances([lat, lon]);
+            });
+          }
+        }
+      }
+    }
+
+    function leafletPointInPolygon(point, vs) {
+      const x = point.lat, y = point.lng;
       let inside = false;
-      const x = point[0], y = point[1];
-      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-        const xi = polygon[i][0], yi = polygon[i][1];
-        const xj = polygon[j][0], yj = polygon[j][1];
+      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        const xi = vs[i][0], yi = vs[i][1];
+        const xj = vs[j][0], yj = vs[j][1];
         const intersect = ((yi > y) !== (yj > y)) &&
                           (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
         if (intersect) inside = !inside;
@@ -107,73 +197,53 @@
       return inside;
     }
 
-    function findNodesInsideRoom() {
-      nodeLayer.clearLayers();
-      const spacingLat = 2 * meterToDegLat;
-      const spacingLon = 2 * getMeterToDegLon(map.getCenter().lat);
-      const bounds = roomPolygon.getBounds();
+    function showNodeDistances(node) {
+      measurementLayer.clearLayers();
 
-      for (let lat = refLat; lat < bounds.getNorth(); lat += spacingLat) {
-        for (let lon = refLon; lon < bounds.getEast(); lon += spacingLon) {
-          const point = [lat, lon];
-          if (bounds.contains([lat, lon]) && pointInPolygon(point, roomCorners)) {
-            const marker = L.circleMarker(point, {
-              color: 'red',
-              fillColor: 'red',
-              fillOpacity: 1,
-              radius: 4
-            }).addTo(nodeLayer);
+      const [lat, lon] = node;
+      const labels = ['Wall 1', 'Wall 2', 'Wall 3', 'Wall 4'];
 
-            marker.on('click', () => showDistancesToWalls(point));
-          }
-        }
-      }
-    }
+      for (let i = 0; i < 4; i++) {
+        const wall = [roomCorners[i], roomCorners[(i + 1) % 4]];
+        const closest = closestPointOnSegment([lon, lat], wall.map(p => [p[1], p[0]])); // [x, y] = [lon, lat]
+        const closestLatLng = [closest[1], closest[0]];
 
-    function showDistancesToWalls(node) {
-      distanceLayer.clearLayers();
-      for (let i = 0; i < roomCorners.length; i++) {
-        const a = roomCorners[i];
-        const b = roomCorners[(i + 1) % roomCorners.length];
-        const closest = getPerpendicularPoint(node, a, b);
-        const dist = haversineDistance(node, closest).toFixed(2);
+        measurementLayer.addLayer(L.polyline([node, closestLatLng], { color: 'purple', weight: 2 }));
 
-        L.polyline([node, closest], {color: 'purple'}).addTo(distanceLayer);
-        const mid = [(node[0] + closest[0]) / 2, (node[1] + closest[1]) / 2];
+        const mid = [(lat + closestLatLng[0]) / 2, (lon + closestLatLng[1]) / 2];
+        const dist = haversineDistance(node, closestLatLng).toFixed(2);
         L.marker(mid, {
           icon: L.divIcon({
             className: '',
-            html: `<div style="background:white;padding:2px;border:1px solid #ccc;border-radius:4px;">${dist} m</div>`
+            html: `<div style="font-size:12px;color:#000;background:#fff;padding:2px 4px;border-radius:3px;">${labels[i]}: ${dist}m</div>`
           })
-        }).addTo(distanceLayer);
+        }).addTo(measurementLayer);
       }
     }
 
-    function getPerpendicularPoint(p, a, b) {
-      const x = p[1], y = p[0];
-      const x1 = a[1], y1 = a[0];
-      const x2 = b[1], y2 = b[0];
-      const dx = x2 - x1;
-      const dy = y2 - y1;
+    function closestPointOnSegment(p, seg) {
+      const [x, y] = p;
+      const [[x1, y1], [x2, y2]] = seg;
+      const dx = x2 - x1, dy = y2 - y1;
+      const len2 = dx * dx + dy * dy;
+      if (len2 === 0) return [x1, y1];
 
-      if (dx === 0 && dy === 0) return a;
-
-      const t = ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy);
-      const tClamped = Math.max(0, Math.min(1, t));
-      return [y1 + tClamped * dy, x1 + tClamped * dx];
+      let t = ((x - x1) * dx + (y - y1) * dy) / len2;
+      t = Math.max(0, Math.min(1, t));
+      return [x1 + t * dx, y1 + t * dy];
     }
 
     function haversineDistance(coord1, coord2) {
-      const R = 6371000; // meters
+      const R = 6371000;
       const toRad = deg => deg * Math.PI / 180;
       const dLat = toRad(coord2[0] - coord1[0]);
       const dLon = toRad(coord2[1] - coord1[1]);
       const lat1 = toRad(coord1[0]);
       const lat2 = toRad(coord2[0]);
 
-      const a = Math.sin(dLat/2) ** 2 +
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                 Math.cos(lat1) * Math.cos(lat2) *
-                Math.sin(dLon/2) ** 2;
+                Math.sin(dLon/2) * Math.sin(dLon/2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
       return R * c;
     }

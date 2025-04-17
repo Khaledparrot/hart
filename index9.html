@@ -1,134 +1,184 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Hartmann Grid Web App</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hartmann Grid Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <style>
-    html, body, #map {
-      height: 100%;
-      margin: 0;
-    }
-    .custom-btn {
+    html, body, #map { height: 100%; margin: 0; padding: 0; }
+    #controls {
       position: absolute;
       top: 10px;
-      right: 10px;
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 1000;
-      background-color: white;
-      border: 1px solid #ccc;
-      padding: 5px 10px;
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    button {
+      padding: 6px 10px;
+      font-size: 14px;
+      margin: 4px;
+      border-radius: 5px;
+      background-color: #007bff;
+      color: white;
+      border: none;
       cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <div id="map"></div>
-  <button class="custom-btn" id="show-intersections" style="display:none;">Show Intersections on Room</button>
-  <button class="custom-btn" id="clear-all" style="top: 50px;">Clear All</button>
+<div id="controls">
+  <button onclick="askLocation()">📍 Get Location</button>
+  <button onclick="startDrawing()">✏️ Draw Room</button>
+  <button onclick="showIntersections()" id="showBtn" style="display:none;">🔴 Show Intersections on Room</button>
+  <button onclick="clearRoom()" id="clearBtn" style="display:none;">🧹 Clear Room and Nodes</button>
+</div>
+<div id="map"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script>
+const map = L.map('map', { maxZoom: 25 }).setView([36.709639, 3.164972], 19); // Updated zoom limit here
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap & CartoDB'
+}).addTo(map);
 
-  <script>
-    const map = L.map('map', { maxZoom: 25 }).setView([36.709639, 3.164972], 22); // 🔍 Zoom changed here
+const refLat = 36.709639;
+const refLon = 3.164972;
+const meterToDegLat = 1 / 111320;
+let drawnShape = null;
+let redNodes = [];
+const nodeLayer = L.layerGroup().addTo(map);
+const gridLayer = L.layerGroup().addTo(map);
+const drawnItems = new L.FeatureGroup().addTo(map);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+// Get longitude scale based on latitude
+function getMeterToDegLon(lat) {
+  return 1 / (111320 * Math.cos(lat * Math.PI / 180));
+}
 
-    const drawnItems = new L.FeatureGroup().addTo(map);
-    const redNodesLayer = new L.LayerGroup().addTo(map);
+// Draw the Hartmann grid globally
+function drawGrid() {
+  const bounds = map.getBounds();
+  const spacingLat = 2 * meterToDegLat;
+  const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
+  const latMin = bounds.getSouth();
+  const latMax = bounds.getNorth();
+  const lonMin = bounds.getWest();
+  const lonMax = bounds.getEast();
 
-    const gridLayer = new L.LayerGroup().addTo(map);
-    const spacingNS = 2;
-    const spacingEW = 2.5;
+  gridLayer.clearLayers();
+  for (let lat = refLat; lat < latMax; lat += spacingLat)
+    if (lat > latMin) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
+  for (let lat = refLat; lat > latMin; lat -= spacingLat)
+    if (lat < latMax) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
+  for (let lon = refLon; lon < lonMax; lon += spacingLon)
+    if (lon > lonMin) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
+  for (let lon = refLon; lon > lonMin; lon -= spacingLon)
+    if (lon < lonMax) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
+}
+map.on('moveend zoomend', drawGrid);
+drawGrid();
 
-    function drawGrid() {
-      const bounds = map.getBounds();
-      const startLat = Math.floor(bounds.getSouth() / spacingNS) * spacingNS;
-      const endLat = Math.ceil(bounds.getNorth() / spacingNS) * spacingNS;
-      const startLng = Math.floor(bounds.getWest() / spacingEW) * spacingEW;
-      const endLng = Math.ceil(bounds.getEast() / spacingEW) * spacingEW;
+function askLocation() {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      map.setView([pos.coords.latitude, pos.coords.longitude], 20);
+    }, err => alert("Geolocation error: " + err.message), {enableHighAccuracy: true});
+  }
+}
 
-      gridLayer.clearLayers();
+const drawControl = new L.Control.Draw({
+  draw: {
+    polygon: {
+      allowIntersection: false,
+      showArea: true
+    },
+    polyline: false,
+    rectangle: false,
+    circle: false,
+    marker: false,
+    circlemarker: false
+  },
+  edit: {
+    featureGroup: drawnItems,
+    remove: true
+  }
+});
+map.addControl(drawControl);
 
-      for (let lat = startLat; lat <= endLat; lat += spacingNS) {
-        const line = L.polyline([[lat, startLng], [lat, endLng]], { color: 'gray', weight: 1 });
-        gridLayer.addLayer(line);
-      }
+function startDrawing() {
+  document.querySelector('#showBtn').style.display = 'none';
+  document.querySelector('#clearBtn').style.display = 'none';
+}
 
-      for (let lng = startLng; lng <= endLng; lng += spacingEW) {
-        const line = L.polyline([[startLat, lng], [endLat, lng]], { color: 'gray', weight: 1 });
-        gridLayer.addLayer(line);
+map.on('draw:created', function (e) {
+  if (drawnShape) {
+    drawnItems.clearLayers();
+    nodeLayer.clearLayers();
+    redNodes = [];
+  }
+
+  drawnShape = e.layer;
+  drawnItems.addLayer(drawnShape);
+  document.querySelector('#showBtn').style.display = 'inline';
+  document.querySelector('#clearBtn').style.display = 'inline';
+});
+
+function showIntersections() {
+  if (!drawnShape) return;
+
+  nodeLayer.clearLayers();
+  redNodes = [];
+
+  const shape = drawnShape.getLatLngs()[0];
+  const spacingLat = 2 * meterToDegLat;
+  const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
+  const bounds = drawnShape.getBounds();
+
+  for (let lat = refLat; lat < bounds.getNorth(); lat += spacingLat) {
+    for (let lon = refLon; lon < bounds.getEast(); lon += spacingLon) {
+      const point = L.latLng(lat, lon);
+      if (bounds.contains(point) && pointInsidePolygon(point, shape)) {
+        const red = L.circleMarker(point, {
+          color: 'red',
+          fillColor: 'red',
+          radius: 5,
+          fillOpacity: 1
+        }).addTo(nodeLayer);
+        redNodes.push(red);
       }
     }
+  }
+}
 
-    map.on('moveend', drawGrid);
-    drawGrid();
+function pointInsidePolygon(point, vs) {
+  let x = point.lat, y = point.lng;
+  let inside = false;
+  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+    const xi = vs[i].lat, yi = vs[i].lng;
+    const xj = vs[j].lat, yj = vs[j].lng;
 
-    const drawControl = new L.Control.Draw({
-      edit: { featureGroup: drawnItems },
-      draw: {
-        polygon: true,
-        polyline: false,
-        rectangle: false,
-        circle: false,
-        marker: false,
-        circlemarker: false
-      }
-    });
+    const intersect = ((yi > y) !== (yj > y)) &&
+                      (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
 
-    map.addControl(drawControl);
-
-    let currentShape = null;
-
-    map.on(L.Draw.Event.CREATED, function (event) {
-      drawnItems.clearLayers();
-      redNodesLayer.clearLayers();
-      currentShape = event.layer;
-      drawnItems.addLayer(currentShape);
-      document.getElementById('show-intersections').style.display = 'block';
-    });
-
-    function getGridIntersectionsInsideShape() {
-      if (!currentShape) return;
-
-      redNodesLayer.clearLayers();
-      const shapeGeoJSON = currentShape.toGeoJSON();
-      const polygon = turf.polygon(shapeGeoJSON.geometry.coordinates);
-      const bounds = map.getBounds();
-
-      const startLat = Math.floor(bounds.getSouth() / spacingNS) * spacingNS;
-      const endLat = Math.ceil(bounds.getNorth() / spacingNS) * spacingNS;
-      const startLng = Math.floor(bounds.getWest() / spacingEW) * spacingEW;
-      const endLng = Math.ceil(bounds.getEast() / spacingEW) * spacingEW;
-
-      for (let lat = startLat; lat <= endLat; lat += spacingNS) {
-        for (let lng = startLng; lng <= endLng; lng += spacingEW) {
-          const pt = turf.point([lng, lat]);
-          if (turf.booleanPointInPolygon(pt, polygon)) {
-            const redDot = L.circleMarker([lat, lng], {
-              radius: 5,
-              color: 'red',
-              fillColor: 'red',
-              fillOpacity: 1
-            }).addTo(redNodesLayer);
-          }
-        }
-      }
-    }
-
-    document.getElementById('show-intersections').addEventListener('click', getGridIntersectionsInsideShape);
-
-    document.getElementById('clear-all').addEventListener('click', () => {
-      drawnItems.clearLayers();
-      redNodesLayer.clearLayers();
-      currentShape = null;
-      document.getElementById('show-intersections').style.display = 'none';
-    });
-  </script>
+function clearRoom() {
+  drawnItems.clearLayers();
+  nodeLayer.clearLayers();
+  drawnShape = null;
+  redNodes = [];
+  document.querySelector('#showBtn').style.display = 'none';
+  document.querySelector('#clearBtn').style.display = 'none';
+}
+</script>
 </body>
 </html>

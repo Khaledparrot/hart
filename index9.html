@@ -28,19 +28,32 @@
       color: white;
       border: none;
     }
-    #showNodesBtn { display: none; }
+    #drawStatus {
+      position: absolute;
+      top: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #fff3cd;
+      color: #856404;
+      padding: 6px 12px;
+      border: 1px solid #ffeeba;
+      border-radius: 6px;
+      z-index: 999;
+      display: none;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
   <div id="controls">
     <button onclick="askLocation()">📍 Get My Location</button>
     <button onclick="startRoomDrawing()">📐 Select Room</button>
-    <button id="showNodesBtn" onclick="findNodesInsideRoom()">🔴 Show Grid Nodes in Room</button>
+    <button id="showNodesBtn" onclick="findNodesInsideRoom()" style="display:none;">🔴 Show Nodes in Room</button>
   </div>
+  <div id="drawStatus">Room Drawing Tool Active. Click to place corners.</div>
   <div id="map"></div>
 
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-
   <script>
     const map = L.map('map', {
       center: [36.709639, 3.164972],
@@ -128,6 +141,7 @@
 
     let roomCorners = [];
     let roomPolygon = null;
+    let tempPolyline = null;
 
     function startRoomDrawing() {
       roomCorners = [];
@@ -139,34 +153,52 @@
       measurementLayer.clearLayers();
       document.getElementById('showNodesBtn').style.display = 'none';
 
-      map.on('click', captureCorner);
-      alert("Click to draw room corners. Double-click to finish.");
+      if (tempPolyline) {
+        map.removeLayer(tempPolyline);
+        tempPolyline = null;
+      }
 
+      map.on('click', captureCorner);
       map.on('dblclick', finishDrawing);
+
+      document.getElementById('drawStatus').style.display = 'block';
+      document.getElementById('drawStatus').textContent = 'Room Drawing Tool Active. Click to place corners.';
     }
 
     function captureCorner(e) {
       roomCorners.push([e.latlng.lat, e.latlng.lng]);
+
+      if (tempPolyline) map.removeLayer(tempPolyline);
+      if (roomCorners.length >= 2) {
+        tempPolyline = L.polygon(roomCorners, { color: '#007bff', dashArray: '4, 4', fillOpacity: 0.1 }).addTo(map);
+      }
+
+      if (roomCorners.length === 3) {
+        document.getElementById('drawStatus').textContent = '3 corners placed. Double-click to finish drawing.';
+      } else if (roomCorners.length > 3) {
+        document.getElementById('drawStatus').textContent = roomCorners.length + ' corners placed. Double-click to finish.';
+      }
     }
 
     function finishDrawing() {
-      map.off('click', captureCorner);
-      map.off('dblclick', finishDrawing);
       if (roomCorners.length < 3) {
-        alert("You need at least 3 corners to define a room.");
+        alert("You need at least 3 corners to form a room.");
         return;
       }
-      drawRoomPolygon();
+      map.off('click', captureCorner);
+      map.off('dblclick', finishDrawing);
+
+      if (tempPolyline) {
+        map.removeLayer(tempPolyline);
+        tempPolyline = null;
+      }
+
+      roomPolygon = L.polygon(roomCorners, { color: 'blue', fillOpacity: 0.1 }).addTo(map);
+      document.getElementById('drawStatus').style.display = 'none';
       document.getElementById('showNodesBtn').style.display = 'inline-block';
     }
 
-    function drawRoomPolygon() {
-      if (roomPolygon) map.removeLayer(roomPolygon);
-      roomPolygon = L.polygon(roomCorners, { color: 'blue', fillOpacity: 0.1 }).addTo(map);
-    }
-
     function findNodesInsideRoom() {
-      if (!roomPolygon) return;
       nodeLayer.clearLayers();
       measurementLayer.clearLayers();
 
@@ -199,32 +231,31 @@
 
     function showNodeDistances(node) {
       measurementLayer.clearLayers();
-
       const [lat, lon] = node;
+      const labels = ['Wall 1', 'Wall 2', 'Wall 3', 'Wall 4'];
 
       for (let i = 0; i < roomCorners.length; i++) {
         const wall = [roomCorners[i], roomCorners[(i + 1) % roomCorners.length]];
         const closest = closestPointOnSegment(node, wall);
         measurementLayer.addLayer(L.polyline([node, closest], { color: 'purple', weight: 2 }));
-
         const mid = [(node[0] + closest[0]) / 2, (node[1] + closest[1]) / 2];
         const dist = haversineDistance(node, closest).toFixed(2);
         L.marker(mid, {
           icon: L.divIcon({
             className: '',
-            html: `<div style="font-size:12px;color:#000;background:#fff;padding:2px 4px;border-radius:3px;">${dist}m</div>`
+            html: `<div style="font-size:12px;color:#000;background:#fff;padding:2px 4px;border-radius:3px;">${labels[i % 4]}: ${dist}m</div>`
           })
         }).addTo(measurementLayer);
       }
     }
 
     function closestPointOnSegment(point, segment) {
-      const [px, py] = point;
+      const [x, y] = point;
       const [[x1, y1], [x2, y2]] = segment;
       const dx = x2 - x1, dy = y2 - y1;
       const l2 = dx*dx + dy*dy;
       if (l2 === 0) return [x1, y1];
-      let t = ((px - x1) * dx + (py - y1) * dy) / l2;
+      let t = ((x - x1) * dx + (y - y1) * dy) / l2;
       t = Math.max(0, Math.min(1, t));
       return [x1 + t * dx, y1 + t * dy];
     }

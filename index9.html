@@ -172,7 +172,7 @@
       nodeLayer.clearLayers();
       measurementLayer.clearLayers();
 
-      // Use the exact grid spacing to place nodes
+      // Use the exact grid spacing to place nodes at grid intersections
       for (let lat = latMin; lat <= latMax; lat += spacingLat) {
         for (let lon = lonMin; lon <= lonMax; lon += spacingLon) {
           const point = L.latLng(lat, lon);
@@ -244,16 +244,15 @@
     function haversineDistance(coord1, coord2) {
       const R = 6371e3; // Earth radius in meters
       const lat1 = coord1[0] * Math.PI / 180;
-      const lon1 = coord1[1] * Math.PI / 180;
       const lat2 = coord2[0] * Math.PI / 180;
-      const lon2 = coord2[1] * Math.PI / 180;
-      const dlat = lat2 - lat1;
-      const dlng = lon2 - lon1;
-      const a = Math.sin(dlat / 2) * Math.sin(dlat / 2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dlng / 2) * Math.sin(dlng / 2);
+      const deltaLat = (coord2[0] - coord1[0]) * Math.PI / 180;
+      const deltaLon = (coord2[1] - coord1[1]) * Math.PI / 180;
+      const a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
+                Math.cos(lat1) * Math.cos(lat2) *
+                Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
       return R * c;
     }
-
   </script>
 </body>
 </html>

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Hartmann Grid Room Tracker</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; }
     #controls {
@@ -28,32 +29,18 @@
       color: white;
       border: none;
     }
-    #drawStatus {
-      position: absolute;
-      top: 60px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: #fff3cd;
-      color: #856404;
-      padding: 6px 12px;
-      border: 1px solid #ffeeba;
-      border-radius: 6px;
-      z-index: 999;
-      display: none;
-      font-size: 14px;
-    }
   </style>
 </head>
 <body>
   <div id="controls">
     <button onclick="askLocation()">📍 Get My Location</button>
-    <button onclick="startRoomDrawing()">📐 Select Room</button>
-    <button id="showNodesBtn" onclick="findNodesInsideRoom()" style="display:none;">🔴 Show Nodes in Room</button>
+    <button onclick="showNodesInRoom()">🔴 Show Nodes Inside Room</button>
   </div>
-  <div id="drawStatus">Room Drawing Tool Active. Click to place corners.</div>
   <div id="map"></div>
 
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
   <script>
     const map = L.map('map', {
       center: [36.709639, 3.164972],
@@ -139,68 +126,40 @@
       }
     }
 
-    let roomCorners = [];
-    let roomPolygon = null;
-    let tempPolyline = null;
-
-    function startRoomDrawing() {
-      roomCorners = [];
-      if (roomPolygon) {
-        map.removeLayer(roomPolygon);
-        roomPolygon = null;
+    // Leaflet Draw setup
+    const drawnItems = new L.FeatureGroup().addTo(map);
+    map.addControl(new L.Control.Draw({
+      edit: { featureGroup: drawnItems },
+      draw: {
+        polygon: {
+          allowIntersection: false,
+          showArea: true,
+          shapeOptions: { color: 'blue' }
+        },
+        polyline: false,
+        circle: false,
+        rectangle: false,
+        marker: false,
+        circlemarker: false
       }
+    }));
+
+    let roomPolygon = null;
+
+    map.on('draw:created', function (e) {
+      if (roomPolygon) drawnItems.removeLayer(roomPolygon);
+      roomPolygon = e.layer;
+      drawnItems.addLayer(roomPolygon);
       nodeLayer.clearLayers();
       measurementLayer.clearLayers();
-      document.getElementById('showNodesBtn').style.display = 'none';
+      alert("Room shape saved. You can now click 'Show Nodes Inside Room'.");
+    });
 
-      if (tempPolyline) {
-        map.removeLayer(tempPolyline);
-        tempPolyline = null;
-      }
-
-      map.on('click', captureCorner);
-      map.on('dblclick', finishDrawing);
-
-      document.getElementById('drawStatus').style.display = 'block';
-      document.getElementById('drawStatus').textContent = 'Room Drawing Tool Active. Click to place corners.';
-    }
-
-    function captureCorner(e) {
-      roomCorners.push([e.latlng.lat, e.latlng.lng]);
-
-      if (tempPolyline) map.removeLayer(tempPolyline);
-      if (roomCorners.length >= 2) {
-        tempPolyline = L.polygon(roomCorners, { color: '#007bff', dashArray: '4, 4', fillOpacity: 0.1 }).addTo(map);
-      }
-
-      if (roomCorners.length === 3) {
-        document.getElementById('drawStatus').textContent = '3 corners placed. Double-click to finish drawing.';
-      } else if (roomCorners.length > 3) {
-        document.getElementById('drawStatus').textContent = roomCorners.length + ' corners placed. Double-click to finish.';
-      }
-    }
-
-    function finishDrawing() {
-      if (roomCorners.length < 3) {
-        alert("You need at least 3 corners to form a room.");
+    function showNodesInRoom() {
+      if (!roomPolygon) {
+        alert("Please draw a room shape first.");
         return;
       }
-      map.off('click', captureCorner);
-      map.off('dblclick', finishDrawing);
-
-      if (tempPolyline) {
-        map.removeLayer(tempPolyline);
-        tempPolyline = null;
-      }
-
-      roomPolygon = L.polygon(roomCorners, { color: 'blue', fillOpacity: 0.1 }).addTo(map);
-      document.getElementById('drawStatus').style.display = 'none';
-      document.getElementById('showNodesBtn').style.display = 'inline-block';
-    }
-
-    function findNodesInsideRoom() {
-      nodeLayer.clearLayers();
-      measurementLayer.clearLayers();
 
       const spacingLat = 2 * meterToDegLat;
       const spacingLon = 2 * getMeterToDegLon(map.getCenter().lat);
@@ -210,11 +169,14 @@
       const lonMin = bounds.getWest();
       const lonMax = bounds.getEast();
 
+      nodeLayer.clearLayers();
+      measurementLayer.clearLayers();
+
       for (let lat = refLat; lat < latMax; lat += spacingLat) {
         for (let lon = refLon; lon < lonMax; lon += spacingLon) {
           const point = L.latLng(lat, lon);
-          if (roomPolygon.contains(point)) {
-            const marker = L.circleMarker([lat, lon], {
+          if (roomPolygon.getBounds().contains(point) && leafletPointInPolygon(point, roomPolygon.getLatLngs()[0])) {
+            const marker = L.circleMarker(point, {
               color: 'red',
               fillColor: 'red',
               fillOpacity: 1,
@@ -222,28 +184,42 @@
             }).addTo(nodeLayer);
 
             marker.on('click', () => {
-              showNodeDistances([lat, lon]);
+              showNodeDistances([lat, lon], roomPolygon.getLatLngs()[0]);
             });
           }
         }
       }
     }
 
-    function showNodeDistances(node) {
+    function leafletPointInPolygon(point, vs) {
+      const x = point.lat, y = point.lng;
+      let inside = false;
+      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        const xi = vs[i].lat, yi = vs[i].lng;
+        const xj = vs[j].lat, yj = vs[j].lng;
+        const intersect = ((yi > y) !== (yj > y)) &&
+                          (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function showNodeDistances(node, corners) {
       measurementLayer.clearLayers();
       const [lat, lon] = node;
-      const labels = ['Wall 1', 'Wall 2', 'Wall 3', 'Wall 4'];
 
-      for (let i = 0; i < roomCorners.length; i++) {
-        const wall = [roomCorners[i], roomCorners[(i + 1) % roomCorners.length]];
-        const closest = closestPointOnSegment(node, wall);
-        measurementLayer.addLayer(L.polyline([node, closest], { color: 'purple', weight: 2 }));
-        const mid = [(node[0] + closest[0]) / 2, (node[1] + closest[1]) / 2];
-        const dist = haversineDistance(node, closest).toFixed(2);
+      for (let i = 0; i < corners.length; i++) {
+        const a = corners[i], b = corners[(i + 1) % corners.length];
+        const wall = [[a.lat, a.lng], [b.lat, b.lng]];
+        const closest = closestPointOnSegment([lat, lon], wall);
+        measurementLayer.addLayer(L.polyline([[lat, lon], closest], { color: 'purple', weight: 2 }));
+
+        const mid = [(lat + closest[0]) / 2, (lon + closest[1]) / 2];
+        const dist = haversineDistance([lat, lon], closest).toFixed(2);
         L.marker(mid, {
           icon: L.divIcon({
             className: '',
-            html: `<div style="font-size:12px;color:#000;background:#fff;padding:2px 4px;border-radius:3px;">${labels[i % 4]}: ${dist}m</div>`
+            html: `<div style="font-size:12px;color:#000;background:#fff;padding:2px 4px;border-radius:3px;">${dist}m</div>`
           })
         }).addTo(measurementLayer);
       }
@@ -253,7 +229,7 @@
       const [x, y] = point;
       const [[x1, y1], [x2, y2]] = segment;
       const dx = x2 - x1, dy = y2 - y1;
-      const l2 = dx*dx + dy*dy;
+      const l2 = dx * dx + dy * dy;
       if (l2 === 0) return [x1, y1];
       let t = ((x - x1) * dx + (y - y1) * dy) / l2;
       t = Math.max(0, Math.min(1, t));
@@ -268,11 +244,10 @@
       const lat1 = toRad(coord1[0]);
       const lat2 = toRad(coord2[0]);
 
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+      const a = Math.sin(dLat / 2) ** 2 +
                 Math.cos(lat1) * Math.cos(lat2) *
-                Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c;
+                Math.sin(dLon / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
   </script>
 </body>

@@ -172,6 +172,7 @@
       nodeLayer.clearLayers();
       measurementLayer.clearLayers();
 
+      // Use the exact grid spacing to place nodes
       for (let lat = latMin; lat <= latMax; lat += spacingLat) {
         for (let lon = lonMin; lon <= lonMax; lon += spacingLon) {
           const point = L.latLng(lat, lon);

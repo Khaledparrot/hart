@@ -28,12 +28,14 @@
       color: white;
       border: none;
     }
+    #showNodesBtn { display: none; }
   </style>
 </head>
 <body>
   <div id="controls">
     <button onclick="askLocation()">📍 Get My Location</button>
     <button onclick="startRoomDrawing()">📐 Select Room</button>
+    <button id="showNodesBtn" onclick="findNodesInsideRoom()">🔴 Show Grid Nodes in Room</button>
   </div>
   <div id="map"></div>
 
@@ -135,6 +137,8 @@
       }
       nodeLayer.clearLayers();
       measurementLayer.clearLayers();
+      document.getElementById('showNodesBtn').style.display = 'none';
+
       map.on('click', captureCorner);
       alert("Click to draw room corners. Double-click to finish.");
 
@@ -153,7 +157,7 @@
         return;
       }
       drawRoomPolygon();
-      findNodesInsideRoom();
+      document.getElementById('showNodesBtn').style.display = 'inline-block';
     }
 
     function drawRoomPolygon() {
@@ -162,6 +166,7 @@
     }
 
     function findNodesInsideRoom() {
+      if (!roomPolygon) return;
       nodeLayer.clearLayers();
       measurementLayer.clearLayers();
 

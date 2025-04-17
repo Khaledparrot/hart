@@ -142,7 +142,7 @@
         map.removeLayer(roomPolygon);
         nodeLayer.clearLayers();
       }
-      alert("Click 4 corners of your room on the map (in order).");
+      alert("Click 4 corners of your room on the map (clockwise or counter-clockwise).");
     }
 
     function clearRoom() {
@@ -173,13 +173,13 @@
       const spacingLat = 2 * meterToDegreeLat;
       const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
 
-      for (let lat = refLat; lat < bounds.getNorth(); lat += spacingLat) {
-        for (let lon = refLon; lon < bounds.getEast(); lon += spacingLon) {
+      for (let lat = refLat - 0.001; lat < bounds.getNorth(); lat += spacingLat) {
+        for (let lon = refLon - 0.001; lon < bounds.getEast(); lon += spacingLon) {
           const point = L.latLng(lat, lon);
           if (polygon.contains(point)) {
             const dists = measureDistanceToWalls(point, roomCorners);
-            const cm = x => (x * 100).toFixed(0);
-            const tooltip = `📏 Distances to walls:<br>
+            const cm = x => (x * 100).toFixed(1);
+            const tooltip = `📏 Distance to walls:<br>
               North: ${cm(dists.north)} cm<br>
               South: ${cm(dists.south)} cm<br>
               East: ${cm(dists.east)} cm<br>
@@ -193,14 +193,38 @@
     }
 
     function measureDistanceToWalls(pt, corners) {
-      const p = L.latLng(pt);
       const [A, B, C, D] = corners.map(c => L.latLng(c));
+      const p = L.latLng(pt);
       return {
-        north: p.distanceTo(L.polyline([A, B]).getBounds().getCenter()),
-        east: p.distanceTo(L.polyline([B, C]).getBounds().getCenter()),
-        south: p.distanceTo(L.polyline([C, D]).getBounds().getCenter()),
-        west: p.distanceTo(L.polyline([D, A]).getBounds().getCenter()),
+        north: distanceToSegment(p, A, B),
+        east:  distanceToSegment(p, B, C),
+        south: distanceToSegment(p, C, D),
+        west:  distanceToSegment(p, D, A),
       };
+    }
+
+    function distanceToSegment(p, a, b) {
+      const x = p.lat, y = p.lng;
+      const x1 = a.lat, y1 = a.lng;
+      const x2 = b.lat, y2 = b.lng;
+
+      const A = x - x1;
+      const B = y - y1;
+      const C = x2 - x1;
+      const D = y2 - y1;
+
+      const dot = A * C + B * D;
+      const len_sq = C * C + D * D;
+      let param = dot / len_sq;
+
+      if (param < 0) param = 0;
+      else if (param > 1) param = 1;
+
+      const xx = x1 + param * C;
+      const yy = y1 + param * D;
+      const dx = x - xx;
+      const dy = y - yy;
+      return Math.sqrt(dx * dx + dy * dy) * 111320; // meters to degrees * 111320 = meters
     }
   </script>
 </body>

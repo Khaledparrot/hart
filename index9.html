@@ -3,188 +3,198 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Hartmann Grid Tracker</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <title>Hartmann Grid Room Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; }
     #controls {
       position: absolute;
-      top: 10px;
-      left: 50%;
+      top: 10px; left: 50%;
       transform: translateX(-50%);
-      z-index: 1000;
+      z-index: 999;
       background: white;
       padding: 10px;
-      border-radius: 8px;
+      border-radius: 10px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-family: sans-serif;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
     }
     button {
       padding: 6px 10px;
       font-size: 14px;
-      margin: 4px;
-      border-radius: 5px;
-      background-color: #007bff;
-      color: white;
-      border: none;
       cursor: pointer;
+      border: none;
+      background: #007bff;
+      color: white;
+      border-radius: 5px;
     }
   </style>
 </head>
 <body>
-<div id="controls">
-  <button onclick="askLocation()">📍 Get Location</button>
-  <button onclick="startDrawing()">✏️ Draw Room</button>
-  <button onclick="showIntersections()" id="showBtn" style="display:none;">🔴 Show Intersections on Room</button>
-  <button onclick="clearRoom()" id="clearBtn" style="display:none;">🧹 Clear Room and Nodes</button>
-</div>
-<div id="map"></div>
+  <div id="controls">
+    <button onclick="askLocation()">📍 Get My Location</button>
+    <button onclick="startRoomDrawing()">🏠 Select Room</button>
+    <button onclick="enableNodeSelection()" id="selectNodeBtn" style="display:none;">🧲 Select Node</button>
+  </div>
+  <div id="map"></div>
 
-<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-<script>
-const map = L.map('map', {
-  center: [36.709639, 3.164972],
-  zoom: 19,
-  maxZoom: 22,
-  minZoom: 2
-}); // Zoom configuration added
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap & CartoDB',
-  maxZoom: 22
-}).addTo(map);
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
 
-const refLat = 36.709639;
-const refLon = 3.164972;
-const meterToDegLat = 1 / 111320;
-let drawnShape = null;
-let redNodes = [];
-const nodeLayer = L.layerGroup().addTo(map);
-const gridLayer = L.layerGroup().addTo(map);
-const drawnItems = new L.FeatureGroup().addTo(map);
+  <script>
+    const map = L.map('map', {
+      center: [36.709639, 3.164972],
+      zoom: 20,
+      maxZoom: 22,
+      minZoom: 2
+    });
 
-// Get longitude scale based on latitude
-function getMeterToDegLon(lat) {
-  return 1 / (111320 * Math.cos(lat * Math.PI / 180));
-}
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap & CartoDB',
+      maxZoom: 22
+    }).addTo(map);
 
-// Draw the Hartmann grid globally
-function drawGrid() {
-  const bounds = map.getBounds();
-  const spacingLat = 2 * meterToDegLat;
-  const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
-  const latMin = bounds.getSouth();
-  const latMax = bounds.getNorth();
-  const lonMin = bounds.getWest();
-  const lonMax = bounds.getEast();
+    let roomPolygon = null;
+    let gridLayer = L.layerGroup().addTo(map);
+    let nodeLayer = L.layerGroup().addTo(map);
+    let userMarker = L.marker([0, 0]);
+    let userCircle = null;
 
-  gridLayer.clearLayers();
-  for (let lat = refLat; lat < latMax; lat += spacingLat)
-    if (lat > latMin) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
-  for (let lat = refLat; lat > latMin; lat -= spacingLat)
-    if (lat < latMax) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
-  for (let lon = refLon; lon < lonMax; lon += spacingLon)
-    if (lon > lonMin) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
-  for (let lon = refLon; lon > lonMin; lon -= spacingLon)
-    if (lon < lonMax) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
-}
-map.on('moveend zoomend', drawGrid);
-drawGrid();
+    const spacingMeters = 2;
+    const meterToDegreeLat = 1 / 111320;
 
-function askLocation() {
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(pos => {
-      map.setView([pos.coords.latitude, pos.coords.longitude], 20);
-    }, err => alert("Geolocation error: " + err.message), {enableHighAccuracy: true});
-  }
-}
+    function getMeterToDegreeLon(lat) {
+      return 1 / (111320 * Math.cos(lat * Math.PI / 180));
+    }
 
-const drawControl = new L.Control.Draw({
-  draw: {
-    polygon: {
-      allowIntersection: false,
-      showArea: true
-    },
-    polyline: false,
-    rectangle: false,
-    circle: false,
-    marker: false,
-    circlemarker: false
-  },
-  edit: {
-    featureGroup: drawnItems,
-    remove: true
-  }
-});
-map.addControl(drawControl);
+    function drawGlobalGrid() {
+      gridLayer.clearLayers();
 
-function startDrawing() {
-  document.querySelector('#showBtn').style.display = 'none';
-  document.querySelector('#clearBtn').style.display = 'none';
-}
+      if (map.getZoom() < 10) return;  // Only draw grid when zoomed in
 
-map.on('draw:created', function (e) {
-  if (drawnShape) {
-    drawnItems.clearLayers();
-    nodeLayer.clearLayers();
-    redNodes = [];
-  }
+      const bounds = map.getBounds();
+      const spacingLat = spacingMeters * meterToDegreeLat;
+      const spacingLon = spacingMeters * getMeterToDegreeLon(map.getCenter().lat);
 
-  drawnShape = e.layer;
-  drawnItems.addLayer(drawnShape);
-  document.querySelector('#showBtn').style.display = 'inline';
-  document.querySelector('#clearBtn').style.display = 'inline';
-});
+      for (let lat = bounds.getSouth(); lat < bounds.getNorth(); lat += spacingLat) {
+        L.polyline([[lat, bounds.getWest()], [lat, bounds.getEast()]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+      }
 
-function showIntersections() {
-  if (!drawnShape) return;
-
-  nodeLayer.clearLayers();
-  redNodes = [];
-
-  const shape = drawnShape.getLatLngs()[0];
-  const spacingLat = 2 * meterToDegLat;
-  const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
-  const bounds = drawnShape.getBounds();
-
-  for (let lat = refLat; lat < bounds.getNorth(); lat += spacingLat) {
-    for (let lon = refLon; lon < bounds.getEast(); lon += spacingLon) {
-      const point = L.latLng(lat, lon);
-      if (bounds.contains(point) && pointInsidePolygon(point, shape)) {
-        const red = L.circleMarker(point, {
-          color: 'red',
-          fillColor: 'red',
-          radius: 5,
-          fillOpacity: 1
-        }).addTo(nodeLayer);
-        redNodes.push(red);
+      for (let lon = bounds.getWest(); lon < bounds.getEast(); lon += spacingLon) {
+        L.polyline([[bounds.getSouth(), lon], [bounds.getNorth(), lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
       }
     }
-  }
-}
 
-function pointInsidePolygon(point, vs) {
-  let x = point.lat, y = point.lng;
-  let inside = false;
-  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-    const xi = vs[i].lat, yi = vs[i].lng;
-    const xj = vs[j].lat, yj = vs[j].lng;
+    map.on('moveend zoomend', () => {
+      drawGlobalGrid();
+      if (roomPolygon) {
+        generateHartmannNodesInsideRoom();  // Redraw red nodes after zoom
+      }
+    });
+    
+    drawGlobalGrid();
 
-    const intersect = ((yi > y) !== (yj > y)) &&
-                      (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
+    function askLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
 
-function clearRoom() {
-  drawnItems.clearLayers();
-  nodeLayer.clearLayers();
-  drawnShape = null;
-  redNodes = [];
-  document.querySelector('#showBtn').style.display = 'none';
-  document.querySelector('#clearBtn').style.display = 'none';
-}
-</script>
+            userMarker.setLatLng([lat, lon]).addTo(map);
+            userMarker.bindPopup(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`).openPopup();
+
+            if (userCircle) map.removeLayer(userCircle);
+            userCircle = L.circle([lat, lon], {
+              radius: position.coords.accuracy,
+              color: '#3388ff',
+              fillColor: '#3388ff',
+              fillOpacity: 0.2
+            }).addTo(map);
+          },
+          (err) => alert("Error getting location: " + err.message),
+          { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+        );
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
+    }
+
+    function startRoomDrawing() {
+      map.addControl(new L.Control.Draw({
+        edit: { featureGroup: new L.FeatureGroup().addTo(map) },
+        draw: { polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: 'blue' } } }
+      }));
+    }
+
+    map.on(L.Draw.Event.CREATED, function (e) {
+      gridLayer.clearLayers();
+      nodeLayer.clearLayers();
+
+      roomPolygon = e.layer;
+      map.addLayer(roomPolygon);
+      document.getElementById("selectNodeBtn").style.display = "inline-block";
+      generateHartmannNodesInsideRoom();
+      drawGlobalGrid();
+    });
+
+    function generateHartmannNodesInsideRoom() {
+      if (!roomPolygon) return;
+
+      const bounds = roomPolygon.getBounds();
+      const spacingLat = spacingMeters * meterToDegreeLat;
+      const spacingLon = spacingMeters * getMeterToDegreeLon(map.getCenter().lat);
+      const center = bounds.getCenter();
+
+      const baseLat = center.lat - ((center.lat - spacingLat) % spacingLat);
+      const baseLon = center.lng - ((center.lng - spacingLon) % spacingLon);
+
+      nodeLayer.clearLayers();  // Clear previous nodes before redrawing
+
+      for (let lat = baseLat - spacingLat; lat < bounds.getNorth() + spacingLat; lat += spacingLat) {
+        for (let lon = baseLon - spacingLon; lon < bounds.getEast() + spacingLon; lon += spacingLon) {
+          const point = L.latLng(lat, lon);
+          if (roomPolygon.getBounds().contains(point)) {
+            L.circleMarker([lat, lon], { radius: 6, color: 'red', fillColor: 'red', fillOpacity: 1 })
+              .addTo(nodeLayer)
+              .on('click', () => measureToWalls(point));
+          }
+        }
+      }
+    }
+
+    function enableNodeSelection() {
+      alert("📍 Click a red node inside your room to measure distances.");
+    }
+
+    function measureToWalls(nodeLatLng) {
+      const roomPoints = roomPolygon.getLatLngs()[0];
+      const distances = [];
+
+      for (let i = 0; i < roomPoints.length; i++) {
+        const p1 = roomPoints[i];
+        const p2 = roomPoints[(i + 1) % roomPoints.length];
+        const d = distanceToLine(nodeLatLng, p1, p2);
+        distances.push(`🧱 Wall ${i+1}: ${d.toFixed(2)}m`);
+      }
+
+      L.popup().setLatLng(nodeLatLng).setContent(distances.join("<br>")).openOn(map);
+    }
+
+    function distanceToLine(p, v, w) {
+      const latlngToPoint = (latlng) => map.latLngToLayerPoint(latlng);
+      const px = latlngToPoint(p);
+      const pv = latlngToPoint(v);
+      const pw = latlngToPoint(w);
+
+      let t = ((px.x - pv.x) * (pw.x - pv.x) + (px.y - pv.y) * (pw.y - pv.y)) / Math.pow(pv.distanceTo(pw), 2);
+      t = Math.max(0, Math.min(1, t));
+
+      return map.layerPointToLatLng(L.point(pv.x + t * (pw.x - pv.x), pv.y + t * (pw.y - pv.y))).distanceTo(p);
+    }
+  </script>
 </body>
 </html>

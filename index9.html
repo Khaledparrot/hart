@@ -172,8 +172,8 @@
       nodeLayer.clearLayers();
       measurementLayer.clearLayers();
 
-      for (let lat = refLat; lat < latMax; lat += spacingLat) {
-        for (let lon = refLon; lon < lonMax; lon += spacingLon) {
+      for (let lat = latMin; lat <= latMax; lat += spacingLat) {
+        for (let lon = lonMin; lon <= lonMax; lon += spacingLon) {
           const point = L.latLng(lat, lon);
           // Ensure the point is inside or on the boundary of the polygon
           if (isPointInsidePolygon(point, roomPolygon.getLatLngs()[0])) {

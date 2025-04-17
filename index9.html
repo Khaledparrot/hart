@@ -136,16 +136,24 @@
       nodeLayer.clearLayers();
       measurementLayer.clearLayers();
       map.on('click', captureCorner);
-      alert("Click four corners of your room on the map.");
+      alert("Click to draw room corners. Double-click to finish.");
+
+      map.on('dblclick', finishDrawing);
     }
 
     function captureCorner(e) {
       roomCorners.push([e.latlng.lat, e.latlng.lng]);
-      if (roomCorners.length === 4) {
-        map.off('click', captureCorner);
-        drawRoomPolygon();
-        findNodesInsideRoom();
+    }
+
+    function finishDrawing() {
+      map.off('click', captureCorner);
+      map.off('dblclick', finishDrawing);
+      if (roomCorners.length < 3) {
+        alert("You need at least 3 corners to define a room.");
+        return;
       }
+      drawRoomPolygon();
+      findNodesInsideRoom();
     }
 
     function drawRoomPolygon() {
@@ -165,11 +173,8 @@
       const lonMin = bounds.getWest();
       const lonMax = bounds.getEast();
 
-      const latStart = Math.floor((latMin - refLat) / spacingLat) * spacingLat + refLat;
-      const lonStart = Math.floor((lonMin - refLon) / spacingLon) * spacingLon + refLon;
-
-      for (let lat = latStart; lat <= latMax; lat += spacingLat) {
-        for (let lon = lonStart; lon <= lonMax; lon += spacingLon) {
+      for (let lat = refLat; lat < latMax; lat += spacingLat) {
+        for (let lon = refLon; lon < lonMax; lon += spacingLon) {
           const point = L.latLng(lat, lon);
           if (roomPolygon.contains(point)) {
             const marker = L.circleMarker([lat, lon], {
@@ -191,10 +196,9 @@
       measurementLayer.clearLayers();
 
       const [lat, lon] = node;
-      const labels = ['Wall 1', 'Wall 2', 'Wall 3', 'Wall 4'];
 
-      for (let i = 0; i < 4; i++) {
-        const wall = [roomCorners[i], roomCorners[(i + 1) % 4]];
+      for (let i = 0; i < roomCorners.length; i++) {
+        const wall = [roomCorners[i], roomCorners[(i + 1) % roomCorners.length]];
         const closest = closestPointOnSegment(node, wall);
         measurementLayer.addLayer(L.polyline([node, closest], { color: 'purple', weight: 2 }));
 
@@ -203,19 +207,19 @@
         L.marker(mid, {
           icon: L.divIcon({
             className: '',
-            html: `<div style="font-size:12px;color:#000;background:#fff;padding:2px 4px;border-radius:3px;">${labels[i]}: ${dist}m</div>`
+            html: `<div style="font-size:12px;color:#000;background:#fff;padding:2px 4px;border-radius:3px;">${dist}m</div>`
           })
         }).addTo(measurementLayer);
       }
     }
 
     function closestPointOnSegment(point, segment) {
-      const [x, y] = point;
+      const [px, py] = point;
       const [[x1, y1], [x2, y2]] = segment;
       const dx = x2 - x1, dy = y2 - y1;
       const l2 = dx*dx + dy*dy;
       if (l2 === 0) return [x1, y1];
-      let t = ((x - x1) * dx + (y - y1) * dy) / l2;
+      let t = ((px - x1) * dx + (py - y1) * dy) / l2;
       t = Math.max(0, Math.min(1, t));
       return [x1 + t * dx, y1 + t * dy];
     }

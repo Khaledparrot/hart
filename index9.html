@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Hartmann Grid App</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+  <style>
+    html, body, #map { height: 100%; margin: 0; padding: 0; }
+    #controls {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+    button {
+      padding: 6px 10px;
+      font-size: 14px;
+      cursor: pointer;
+      margin: 4px;
+      border-radius: 5px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button onclick="askLocation()">📍 Get My Location</button>
+    <button onclick="startRoomDrawing()">📐 Select Room</button>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+
+  <script>
+    const map = L.map('map', {
+      center: [36.709639, 3.164972],
+      zoom: 19,
+      maxZoom: 22,
+      minZoom: 2
+    });
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap & CartoDB',
+      maxZoom: 22
+    }).addTo(map);
+
+    const refLat = 36.709639;
+    const refLon = 3.164972;
+    const meterToDegLat = 1 / 111320;
+    const gridLayer = L.layerGroup().addTo(map);
+    const nodeLayer = L.layerGroup().addTo(map);
+    const measurementLayer = L.layerGroup().addTo(map);
+
+    function getMeterToDegLon(lat) {
+      return 1 / (111320 * Math.cos(lat * Math.PI / 180));
+    }
+
+    function drawGrid() {
+      gridLayer.clearLayers();
+      const zoom = map.getZoom();
+      if (zoom < 16) return;
+
+      const spacingLat = 2 * meterToDegLat;
+      const spacingLon = 2 * getMeterToDegLon(map.getCenter().lat);
+      const bounds = map.getBounds();
+      const latMin = bounds.getSouth();
+      const latMax = bounds.getNorth();
+      const lonMin = bounds.getWest();
+      const lonMax = bounds.getEast();
+
+      for (let lat = refLat; lat < latMax; lat += spacingLat)
+        if (lat > latMin) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
+      for (let lat = refLat; lat > latMin; lat -= spacingLat)
+        if (lat < latMax) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
+      for (let lon = refLon; lon < lonMax; lon += spacingLon)
+        if (lon > lonMin) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
+      for (let lon = refLon; lon > lonMin; lon -= spacingLon)
+        if (lon < lonMax) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
+    }
+
+    let gridTimeout;
+    function scheduleGridRedraw() {
+      if (gridTimeout) clearTimeout(gridTimeout);
+      gridTimeout = setTimeout(drawGrid, 300);
+    }
+
+    map.on('moveend zoomend', scheduleGridRedraw);
+    scheduleGridRedraw();
+
+    let userMarker = null;
+    let userCircle = null;
+    function askLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+
+            if (!userMarker) userMarker = L.marker([lat, lon]).addTo(map);
+            userMarker.setLatLng([lat, lon]);
+            userMarker.bindPopup(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`).openPopup();
+
+            if (userCircle) map.removeLayer(userCircle);
+            userCircle = L.circle([lat, lon], {
+              radius: position.coords.accuracy,
+              color: '#3388ff',
+              fillColor: '#3388ff',
+              fillOpacity: 0.2
+            }).addTo(map);
+          },
+          (err) => alert("Error getting location: " + err.message),
+          { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+        );
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
+    }
+
+    let roomCorners = [];
+    let roomPolygon = null;
+
+    function startRoomDrawing() {
+      roomCorners = [];
+      if (roomPolygon) {
+        map.removeLayer(roomPolygon);
+        roomPolygon = null;
+      }
+      nodeLayer.clearLayers();
+      measurementLayer.clearLayers();
+      map.on('click', captureCorner);
+      alert("Click four corners of your room on the map.");
+    }
+
+    function captureCorner(e) {
+      roomCorners.push([e.latlng.lat, e.latlng.lng]);
+      if (roomCorners.length === 4) {
+        map.off('click', captureCorner);
+        drawRoomPolygon();
+        findNodesInsideRoom();
+      }
+    }
+
+    function drawRoomPolygon() {
+      if (roomPolygon) map.removeLayer(roomPolygon);
+      roomPolygon = L.polygon(roomCorners, { color: 'blue', fillOpacity: 0.1 }).addTo(map);
+    }
+
+    function findNodesInsideRoom() {
+      nodeLayer.clearLayers();
+      measurementLayer.clearLayers();
+
+      const spacingLat = 2 * meterToDegLat;
+      const spacingLon = 2 * getMeterToDegLon(map.getCenter().lat);
+      const bounds = roomPolygon.getBounds();
+      const latMin = bounds.getSouth();
+      const latMax = bounds.getNorth();
+      const lonMin = bounds.getWest();
+      const lonMax = bounds.getEast();
+
+      for (let lat = refLat; lat < latMax; lat += spacingLat) {
+        for (let lon = refLon; lon < lonMax; lon += spacingLon) {
+          const point = L.latLng(lat, lon);
+          if (roomPolygon.getBounds().contains(point) && leafletPointInPolygon(point, roomCorners)) {
+            const marker = L.circleMarker([lat, lon], {
+              color: 'red',
+              radius: 6
+            }).addTo(nodeLayer);
+
+            marker.on('click', () => {
+              showNodeDistances([lat, lon]);
+            });
+          }
+        }
+      }
+    }
+
+    function leafletPointInPolygon(point, vs) {
+      const x = point.lat, y = point.lng;
+      let inside = false;
+      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+        const xi = vs[i][0], yi = vs[i][1];
+        const xj = vs[j][0], yj = vs[j][1];
+        const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi + xi));
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function showNodeDistances(node) {
+      measurementLayer.clearLayers();
+      nodeLayer.eachLayer(layer => {
+        if (!layer.getLatLng().equals(node)) nodeLayer.removeLayer(layer);
+      });
+
+      const [lat, lon] = node;
+      const labels = ['North', 'East', 'South', 'West'];
+      for (let i = 0; i < 4; i++) {
+        const wall = [roomCorners[i], roomCorners[(i + 1) % 4]];
+        const closest = closestPointOnSegment(node, wall);
+        measurementLayer.addLayer(L.polyline([node, closest], { color: 'purple', weight: 2 }));
+        const mid = [(node[0] + closest[0]) / 2, (node[1] + closest[1]) / 2];
+        const d = haversineDistance(node, closest).toFixed(2);
+        L.marker(mid, { icon: L.divIcon({ className: '', html: `<div style="font-size:12px;color:#000;">${labels[i]}: ${d}m</div>` }) }).addTo(measurementLayer);
+      }
+    }
+
+    function closestPointOnSegment(point, segment) {
+      const [x, y] = point;
+      const [[x1, y1], [x2, y2]] = segment;
+      const dx = x2 - x1, dy = y2 - y1;
+      const l2 = dx*dx + dy*dy;
+      if (l2 === 0) return [x1, y1];
+      let t = ((x - x1) * dx + (y - y1) * dy) / l2;
+      t = Math.max(0, Math.min(1, t));
+      return [x1 + t * dx, y1 + t * dy];
+    }
+
+    function haversineDistance(coord1, coord2) {
+      const R = 6371e3;
+      const toRad = deg => deg * Math.PI / 180;
+      const dLat = toRad(coord2[0] - coord1[0]);
+      const dLon = toRad(coord2[1] - coord1[1]);
+      const a = Math.sin(dLat/2)**2 +
+                Math.cos(toRad(coord1[0])) * Math.cos(toRad(coord2[0])) *
+                Math.sin(dLon/2)**2;
+      return (R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))) / 100;
+    }
+  </script>
+</body>
+</html>

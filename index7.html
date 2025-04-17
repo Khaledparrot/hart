@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Indoor Hartmann Grid</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
+  <style>
+    html, body, #map { height: 100%; margin: 0; padding: 0; }
+    #controls {
+      position: absolute;
+      top: 10px; left: 50%;
+      transform: translateX(-50%);
+      z-index: 999;
+      background: white;
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      font-family: sans-serif;
+      display: flex; gap: 10px;
+    }
+    button {
+      padding: 6px 10px;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      background: #007bff;
+      color: white;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <button onclick="askLocation()">📍 Get My Location</button>
+    <button onclick="startRoomSetup()">📐 Define My Room</button>
+    <button onclick="clearRoom()">🗑️ Reset Room</button>
+  </div>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map', {
+      center: [36.709639, 3.164972],
+      zoom: 19,
+      maxZoom: 22,
+      minZoom: 2
+    });
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap & CartoDB',
+      maxZoom: 22
+    }).addTo(map);
+
+    const refLat = 36.709639;
+    const refLon = 3.164972;
+    const meterToDegreeLat = 1 / 111320;
+
+    function getMeterToDegreeLon(lat) {
+      return 1 / (111320 * Math.cos(lat * Math.PI / 180));
+    }
+
+    const gridLayer = L.layerGroup().addTo(map);
+    const nodeLayer = L.layerGroup().addTo(map);
+
+    function drawGlobalGrid() {
+      gridLayer.clearLayers();
+
+      const zoom = map.getZoom();
+      if (zoom < 17) return;
+
+      const bounds = map.getBounds();
+      const latMin = bounds.getSouth();
+      const latMax = bounds.getNorth();
+      const lonMin = bounds.getWest();
+      const lonMax = bounds.getEast();
+
+      const spacingLat = 2 * meterToDegreeLat;
+      const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
+
+      for (let lat = refLat; lat < latMax; lat += spacingLat) {
+        if (lat > latMin) L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+      }
+      for (let lat = refLat; lat > latMin; lat -= spacingLat) {
+        if (lat < latMax) L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+      }
+      for (let lon = refLon; lon < lonMax; lon += spacingLon) {
+        if (lon > lonMin) L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+      }
+      for (let lon = refLon; lon > lonMin; lon -= spacingLon) {
+        if (lon < lonMax) L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+      }
+    }
+
+    let gridTimeout;
+    function scheduleGridRedraw() {
+      if (gridTimeout) clearTimeout(gridTimeout);
+      gridTimeout = setTimeout(drawGlobalGrid, 300);
+    }
+
+    map.on('moveend zoomend', scheduleGridRedraw);
+    scheduleGridRedraw();
+
+    let userMarker = L.marker([0, 0]).addTo(map).bindPopup("📍 Your location");
+    let userCircle = null;
+
+    function askLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+            userMarker.setLatLng([lat, lon]);
+            userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+            userMarker.openPopup();
+
+            if (userCircle) map.removeLayer(userCircle);
+            userCircle = L.circle([lat, lon], {
+              radius: position.coords.accuracy,
+              color: '#3388ff',
+              fillColor: '#3388ff',
+              fillOpacity: 0.2
+            }).addTo(map);
+          },
+          (err) => alert("Error getting location: " + err.message),
+          { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+        );
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
+    }
+
+    // Room Setup Logic
+    let roomCorners = [];
+    let roomPolygon = null;
+    let roomMode = false;
+
+    function startRoomSetup() {
+      roomMode = true;
+      roomCorners = [];
+      if (roomPolygon) {
+        map.removeLayer(roomPolygon);
+        nodeLayer.clearLayers();
+      }
+      alert("Click 4 corners of your room on the map (in order).");
+    }
+
+    function clearRoom() {
+      roomCorners = [];
+      roomMode = false;
+      if (roomPolygon) map.removeLayer(roomPolygon);
+      nodeLayer.clearLayers();
+    }
+
+    map.on('click', function(e) {
+      if (!roomMode) return;
+      if (roomCorners.length < 4) {
+        roomCorners.push([e.latlng.lat, e.latlng.lng]);
+        if (roomPolygon) map.removeLayer(roomPolygon);
+        roomPolygon = L.polygon(roomCorners, { color: 'blue' }).addTo(map);
+      }
+      if (roomCorners.length === 4) {
+        roomMode = false;
+        generateHartmannNodesInsideRoom();
+      }
+    });
+
+    function generateHartmannNodesInsideRoom() {
+      nodeLayer.clearLayers();
+      const polygon = L.polygon(roomCorners);
+      const bounds = polygon.getBounds();
+
+      const spacingLat = 2 * meterToDegreeLat;
+      const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
+
+      for (let lat = refLat; lat < bounds.getNorth(); lat += spacingLat) {
+        for (let lon = refLon; lon < bounds.getEast(); lon += spacingLon) {
+          const point = L.latLng(lat, lon);
+          if (polygon.contains(point)) {
+            const dists = measureDistanceToWalls(point, roomCorners);
+            const cm = x => (x * 100).toFixed(0);
+            const tooltip = `📏 Distances to walls:<br>
+              North: ${cm(dists.north)} cm<br>
+              South: ${cm(dists.south)} cm<br>
+              East: ${cm(dists.east)} cm<br>
+              West: ${cm(dists.west)} cm`;
+            L.circleMarker(point, { radius: 4, color: 'red' })
+              .addTo(nodeLayer)
+              .bindPopup(tooltip);
+          }
+        }
+      }
+    }
+
+    function measureDistanceToWalls(pt, corners) {
+      const p = L.latLng(pt);
+      const [A, B, C, D] = corners.map(c => L.latLng(c));
+      return {
+        north: p.distanceTo(L.polyline([A, B]).getBounds().getCenter()),
+        east: p.distanceTo(L.polyline([B, C]).getBounds().getCenter()),
+        south: p.distanceTo(L.polyline([C, D]).getBounds().getCenter()),
+        west: p.distanceTo(L.polyline([D, A]).getBounds().getCenter()),
+      };
+    }
+  </script>
+</body>
+</html>

@@ -43,9 +43,15 @@
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script>
-const map = L.map('map', { maxZoom: 25 }).setView([36.709639, 3.164972], 19); // Updated zoom limit here
+const map = L.map('map', {
+  center: [36.709639, 3.164972],
+  zoom: 19,
+  maxZoom: 22,
+  minZoom: 2
+}); // Zoom configuration added
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap & CartoDB'
+  attribution: '&copy; OpenStreetMap & CartoDB',
+  maxZoom: 22
 }).addTo(map);
 
 const refLat = 36.709639;

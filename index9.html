@@ -175,7 +175,8 @@
       for (let lat = refLat; lat < latMax; lat += spacingLat) {
         for (let lon = refLon; lon < lonMax; lon += spacingLon) {
           const point = L.latLng(lat, lon);
-          if (roomPolygon.getBounds().contains(point) && leafletPointInPolygon(point, roomPolygon.getLatLngs()[0])) {
+          // Ensure the point is inside or on the boundary of the polygon
+          if (isPointInsidePolygon(point, roomPolygon.getLatLngs()[0])) {
             const marker = L.circleMarker(point, {
               color: 'red',
               fillColor: 'red',
@@ -191,14 +192,17 @@
       }
     }
 
-    function leafletPointInPolygon(point, vs) {
-      const x = point.lat, y = point.lng;
+    // Ray-Casting Algorithm for point-in-polygon test
+    function isPointInsidePolygon(point, polygon) {
+      let x = point.lat, y = point.lng;
       let inside = false;
-      for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-        const xi = vs[i].lat, yi = vs[i].lng;
-        const xj = vs[j].lat, yj = vs[j].lng;
-        const intersect = ((yi > y) !== (yj > y)) &&
-                          (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        let xi = polygon[i].lat, yi = polygon[i].lng;
+        let xj = polygon[j].lat, yj = polygon[j].lng;
+
+        let intersect = ((yi > y) !== (yj > y)) &&
+                        (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
         if (intersect) inside = !inside;
       }
       return inside;
@@ -237,18 +241,18 @@
     }
 
     function haversineDistance(coord1, coord2) {
-      const R = 6371000;
-      const toRad = deg => deg * Math.PI / 180;
-      const dLat = toRad(coord2[0] - coord1[0]);
-      const dLon = toRad(coord2[1] - coord1[1]);
-      const lat1 = toRad(coord1[0]);
-      const lat2 = toRad(coord2[0]);
-
-      const a = Math.sin(dLat / 2) ** 2 +
-                Math.cos(lat1) * Math.cos(lat2) *
-                Math.sin(dLon / 2) ** 2;
-      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const R = 6371e3; // Earth radius in meters
+      const lat1 = coord1[0] * Math.PI / 180;
+      const lon1 = coord1[1] * Math.PI / 180;
+      const lat2 = coord2[0] * Math.PI / 180;
+      const lon2 = coord2[1] * Math.PI / 180;
+      const dlat = lat2 - lat1;
+      const dlng = lon2 - lon1;
+      const a = Math.sin(dlat / 2) * Math.sin(dlat / 2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dlng / 2) * Math.sin(dlng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
     }
+
   </script>
 </body>
 </html>

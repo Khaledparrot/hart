@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Indoor Hartmann Grid</title>
+  <title>Hartmann Grid Room Measurement</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css"/>
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; }
@@ -17,7 +17,7 @@
       border-radius: 10px;
       box-shadow: 0 2px 6px rgba(0,0,0,0.2);
       font-family: sans-serif;
-      display: flex; gap: 10px;
+      display: flex; gap: 10px; flex-wrap: wrap;
     }
     button {
       padding: 6px 10px;
@@ -35,6 +35,7 @@
     <button onclick="askLocation()">📍 Get My Location</button>
     <button onclick="startRoomSetup()">📐 Define My Room</button>
     <button onclick="clearRoom()">🗑️ Reset Room</button>
+    <button onclick="startNodeSelect()">🎯 Select Node</button>
   </div>
   <div id="map"></div>
 
@@ -55,47 +56,43 @@
     const refLat = 36.709639;
     const refLon = 3.164972;
     const meterToDegreeLat = 1 / 111320;
+    const nodeLayer = L.layerGroup().addTo(map);
+    const gridLayer = L.layerGroup().addTo(map);
+
+    let nodeMarkers = [];
+    let selectedNode = null;
+    let selectingNode = false;
 
     function getMeterToDegreeLon(lat) {
       return 1 / (111320 * Math.cos(lat * Math.PI / 180));
     }
 
-    const gridLayer = L.layerGroup().addTo(map);
-    const nodeLayer = L.layerGroup().addTo(map);
+    let gridTimeout;
+    function scheduleGridRedraw() {
+      if (gridTimeout) clearTimeout(gridTimeout);
+      gridTimeout = setTimeout(drawGrid, 300);
+    }
 
-    function drawGlobalGrid() {
+    function drawGrid() {
       gridLayer.clearLayers();
-
       const zoom = map.getZoom();
       if (zoom < 17) return;
 
       const bounds = map.getBounds();
-      const latMin = bounds.getSouth();
-      const latMax = bounds.getNorth();
-      const lonMin = bounds.getWest();
-      const lonMax = bounds.getEast();
-
       const spacingLat = 2 * meterToDegreeLat;
       const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
 
-      for (let lat = refLat; lat < latMax; lat += spacingLat) {
-        if (lat > latMin) L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+      for (let lat = refLat; lat < bounds.getNorth(); lat += spacingLat) {
+        if (lat > bounds.getSouth()) {
+          L.polyline([[lat, bounds.getWest()], [lat, bounds.getEast()]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
       }
-      for (let lat = refLat; lat > latMin; lat -= spacingLat) {
-        if (lat < latMax) L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-      }
-      for (let lon = refLon; lon < lonMax; lon += spacingLon) {
-        if (lon > lonMin) L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-      }
-      for (let lon = refLon; lon > lonMin; lon -= spacingLon) {
-        if (lon < lonMax) L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
-      }
-    }
 
-    let gridTimeout;
-    function scheduleGridRedraw() {
-      if (gridTimeout) clearTimeout(gridTimeout);
-      gridTimeout = setTimeout(drawGlobalGrid, 300);
+      for (let lon = refLon; lon < bounds.getEast(); lon += spacingLon) {
+        if (lon > bounds.getWest()) {
+          L.polyline([[bounds.getSouth(), lon], [bounds.getNorth(), lon]], { color: '#00ff00', weight: 0.5 }).addTo(gridLayer);
+        }
+      }
     }
 
     map.on('moveend zoomend', scheduleGridRedraw);
@@ -110,6 +107,7 @@
           (position) => {
             const lat = position.coords.latitude;
             const lon = position.coords.longitude;
+
             userMarker.setLatLng([lat, lon]);
             userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
             userMarker.openPopup();
@@ -130,7 +128,7 @@
       }
     }
 
-    // Room Setup Logic
+    // Room logic
     let roomCorners = [];
     let roomPolygon = null;
     let roomMode = false;
@@ -138,38 +136,75 @@
     function startRoomSetup() {
       roomMode = true;
       roomCorners = [];
-      if (roomPolygon) {
-        map.removeLayer(roomPolygon);
-        nodeLayer.clearLayers();
-      }
+      nodeMarkers = [];
+      if (roomPolygon) map.removeLayer(roomPolygon);
+      nodeLayer.clearLayers();
       alert("Click 4 corners of your room on the map (clockwise or counter-clockwise).");
     }
 
     function clearRoom() {
       roomCorners = [];
       roomMode = false;
+      selectingNode = false;
       if (roomPolygon) map.removeLayer(roomPolygon);
       nodeLayer.clearLayers();
+      nodeMarkers = [];
+      selectedNode = null;
     }
 
     map.on('click', function(e) {
-      if (!roomMode) return;
-      if (roomCorners.length < 4) {
+      if (roomMode && roomCorners.length < 4) {
         roomCorners.push([e.latlng.lat, e.latlng.lng]);
         if (roomPolygon) map.removeLayer(roomPolygon);
         roomPolygon = L.polygon(roomCorners, { color: 'blue' }).addTo(map);
-      }
-      if (roomCorners.length === 4) {
-        roomMode = false;
-        generateHartmannNodesInsideRoom();
+
+        if (roomCorners.length === 4) {
+          roomMode = false;
+          generateHartmannNodesInsideRoom();
+          alert("✅ Room set! Now click '🎯 Select Node' and choose a node inside your room.");
+        }
+      } else if (selectingNode) {
+        handleNodeSelection(e.latlng);
       }
     });
 
+    function startNodeSelect() {
+      if (roomCorners.length !== 4) {
+        alert("❗ Define your room first.");
+        return;
+      }
+      selectingNode = true;
+      alert("🎯 Click on a red node inside your room to view measurements.");
+    }
+
+    function handleNodeSelection(latlng) {
+      let minDist = Infinity;
+      let nearest = null;
+
+      nodeMarkers.forEach(marker => {
+        const dist = latlng.distanceTo(marker.getLatLng());
+        if (dist < 1) { // less than 1m threshold
+          nearest = marker;
+          minDist = dist;
+        }
+      });
+
+      if (nearest) {
+        if (selectedNode) selectedNode.setStyle({ color: 'red' });
+        selectedNode = nearest;
+        selectedNode.setStyle({ color: 'blue' });
+        selectedNode.openPopup();
+        selectingNode = false;
+      } else {
+        alert("❗ Please click directly on a red node.");
+      }
+    }
+
     function generateHartmannNodesInsideRoom() {
       nodeLayer.clearLayers();
+      nodeMarkers = [];
       const polygon = L.polygon(roomCorners);
       const bounds = polygon.getBounds();
-
       const spacingLat = 2 * meterToDegreeLat;
       const spacingLon = 2 * getMeterToDegreeLon(map.getCenter().lat);
 
@@ -184,9 +219,12 @@
               South: ${cm(dists.south)} cm<br>
               East: ${cm(dists.east)} cm<br>
               West: ${cm(dists.west)} cm`;
-            L.circleMarker(point, { radius: 4, color: 'red' })
+
+            const marker = L.circleMarker(point, { radius: 4, color: 'red' })
               .addTo(nodeLayer)
               .bindPopup(tooltip);
+
+            nodeMarkers.push(marker);
           }
         }
       }
@@ -224,7 +262,7 @@
       const yy = y1 + param * D;
       const dx = x - xx;
       const dy = y - yy;
-      return Math.sqrt(dx * dx + dy * dy) * 111320; // meters to degrees * 111320 = meters
+      return Math.sqrt(dx * dx + dy * dy) * 111320; // convert degrees to meters
     }
   </script>
 </body>

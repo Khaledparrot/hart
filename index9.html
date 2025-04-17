@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Hartmann Grid Room Tracker</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; }
     #controls {
@@ -34,12 +34,11 @@
 <body>
   <div id="controls">
     <button onclick="askLocation()">📍 Get My Location</button>
-    <button onclick="showNodesInRoom()">🔴 Show Nodes Inside Room</button>
   </div>
   <div id="map"></div>
 
   <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 
   <script>
     const map = L.map('map', {
@@ -54,16 +53,17 @@
       maxZoom: 22
     }).addTo(map);
 
-    const refLat = 36.709639;
-    const refLon = 3.164972;
     const meterToDegLat = 1 / 111320;
+    function getMeterToDegLon(lat) {
+      return 1 / (111320 * Math.cos(lat * Math.PI / 180));
+    }
+
     const gridLayer = L.layerGroup().addTo(map);
     const nodeLayer = L.layerGroup().addTo(map);
     const measurementLayer = L.layerGroup().addTo(map);
 
-    function getMeterToDegLon(lat) {
-      return 1 / (111320 * Math.cos(lat * Math.PI / 180));
-    }
+    const refLat = 36.709639;
+    const refLon = 3.164972;
 
     function drawGrid() {
       gridLayer.clearLayers();
@@ -73,19 +73,24 @@
       const spacingLat = 2 * meterToDegLat;
       const spacingLon = 2 * getMeterToDegLon(map.getCenter().lat);
       const bounds = map.getBounds();
-      const latMin = bounds.getSouth();
-      const latMax = bounds.getNorth();
-      const lonMin = bounds.getWest();
-      const lonMax = bounds.getEast();
 
-      for (let lat = refLat; lat < latMax; lat += spacingLat)
-        if (lat > latMin) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
-      for (let lat = refLat; lat > latMin; lat -= spacingLat)
-        if (lat < latMax) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
-      for (let lon = refLon; lon < lonMax; lon += spacingLon)
-        if (lon > lonMin) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
-      for (let lon = refLon; lon > lonMin; lon -= spacingLon)
-        if (lon < lonMax) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
+      for (let lat = refLat; lat < bounds.getNorth(); lat += spacingLat) {
+        if (lat > bounds.getSouth())
+          gridLayer.addLayer(L.polyline([[lat, bounds.getWest()], [lat, bounds.getEast()]], {color: '#00ff00', weight: 0.5}));
+      }
+      for (let lat = refLat; lat > bounds.getSouth(); lat -= spacingLat) {
+        if (lat < bounds.getNorth())
+          gridLayer.addLayer(L.polyline([[lat, bounds.getWest()], [lat, bounds.getEast()]], {color: '#00ff00', weight: 0.5}));
+      }
+
+      for (let lon = refLon; lon < bounds.getEast(); lon += spacingLon) {
+        if (lon > bounds.getWest())
+          gridLayer.addLayer(L.polyline([[bounds.getSouth(), lon], [bounds.getNorth(), lon]], {color: '#00ff00', weight: 0.5}));
+      }
+      for (let lon = refLon; lon > bounds.getWest(); lon -= spacingLon) {
+        if (lon < bounds.getEast())
+          gridLayer.addLayer(L.polyline([[bounds.getSouth(), lon], [bounds.getNorth(), lon]], {color: '#00ff00', weight: 0.5}));
+      }
     }
 
     let gridTimeout;
@@ -99,6 +104,7 @@
 
     let userMarker = null;
     let userCircle = null;
+
     function askLocation() {
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
@@ -126,101 +132,72 @@
       }
     }
 
-    // Leaflet Draw setup
     const drawnItems = new L.FeatureGroup().addTo(map);
-    map.addControl(new L.Control.Draw({
+    const drawControl = new L.Control.Draw({
       edit: { featureGroup: drawnItems },
       draw: {
-        polygon: {
-          allowIntersection: false,
-          showArea: true,
-          shapeOptions: { color: 'blue' }
-        },
         polyline: false,
         circle: false,
         rectangle: false,
         marker: false,
-        circlemarker: false
+        circlemarker: false,
+        polygon: {
+          allowIntersection: false,
+          showArea: true
+        }
       }
-    }));
-
-    let roomPolygon = null;
+    });
+    map.addControl(drawControl);
 
     map.on('draw:created', function (e) {
-      if (roomPolygon) drawnItems.removeLayer(roomPolygon);
-      roomPolygon = e.layer;
-      drawnItems.addLayer(roomPolygon);
+      const shape = e.layer;
+      drawnItems.clearLayers();
       nodeLayer.clearLayers();
       measurementLayer.clearLayers();
-      alert("Room shape saved. You can now click 'Show Nodes Inside Room'.");
+      drawnItems.addLayer(shape);
+      findRedNodesInPolygon(shape);
     });
 
-    function showNodesInRoom() {
-      if (!roomPolygon) {
-        alert("Please draw a room shape first.");
-        return;
-      }
-
-      const spacingLat = 2 * meterToDegLat;
-      const spacingLon = 2 * getMeterToDegLon(map.getCenter().lat);
-      const bounds = roomPolygon.getBounds();
-      const latMin = bounds.getSouth();
-      const latMax = bounds.getNorth();
-      const lonMin = bounds.getWest();
-      const lonMax = bounds.getEast();
-
+    function findRedNodesInPolygon(polygon) {
       nodeLayer.clearLayers();
       measurementLayer.clearLayers();
+      const bounds = polygon.getBounds();
+      const spacingLat = 2 * meterToDegLat;
+      const spacingLon = 2 * getMeterToDegLon(map.getCenter().lat);
 
-      // Use the exact grid spacing to place nodes at grid intersections
-      for (let lat = latMin; lat <= latMax; lat += spacingLat) {
-        for (let lon = lonMin; lon <= lonMax; lon += spacingLon) {
+      for (let lat = refLat; lat < bounds.getNorth(); lat += spacingLat) {
+        for (let lon = refLon; lon < bounds.getEast(); lon += spacingLon) {
           const point = L.latLng(lat, lon);
-          // Ensure the point is inside or on the boundary of the polygon
-          if (isPointInsidePolygon(point, roomPolygon.getLatLngs()[0])) {
-            const marker = L.circleMarker(point, {
+          if (polygon.getBounds().contains(point) && leafletPointInPolygon(point, polygon)) {
+            const marker = L.circleMarker([lat, lon], {
               color: 'red',
               fillColor: 'red',
               fillOpacity: 1,
               radius: 5
             }).addTo(nodeLayer);
-
-            marker.on('click', () => {
-              showNodeDistances([lat, lon], roomPolygon.getLatLngs()[0]);
-            });
+            marker.on('click', () => showPerpendicularDistances([lat, lon], polygon));
           }
         }
       }
     }
 
-    // Ray-Casting Algorithm for point-in-polygon test
-    function isPointInsidePolygon(point, polygon) {
-      let x = point.lat, y = point.lng;
-      let inside = false;
-
-      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-        let xi = polygon[i].lat, yi = polygon[i].lng;
-        let xj = polygon[j].lat, yj = polygon[j].lng;
-
-        let intersect = ((yi > y) !== (yj > y)) &&
-                        (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-        if (intersect) inside = !inside;
-      }
-      return inside;
+    function leafletPointInPolygon(point, polygon) {
+      return turf.booleanPointInPolygon([point.lng, point.lat], polygon.toGeoJSON());
     }
 
-    function showNodeDistances(node, corners) {
+    function showPerpendicularDistances(node, polygon) {
       measurementLayer.clearLayers();
-      const [lat, lon] = node;
+      const latlngs = polygon.getLatLngs()[0];
+      const labels = [];
 
-      for (let i = 0; i < corners.length; i++) {
-        const a = corners[i], b = corners[(i + 1) % corners.length];
-        const wall = [[a.lat, a.lng], [b.lat, b.lng]];
-        const closest = closestPointOnSegment([lat, lon], wall);
-        measurementLayer.addLayer(L.polyline([[lat, lon], closest], { color: 'purple', weight: 2 }));
+      for (let i = 0; i < latlngs.length; i++) {
+        const a = latlngs[i];
+        const b = latlngs[(i + 1) % latlngs.length];
+        const closest = closestPointOnSegment(node, [[a.lat, a.lng], [b.lat, b.lng]]);
+        measurementLayer.addLayer(L.polyline([node, closest], { color: 'purple', weight: 2 }));
 
-        const mid = [(lat + closest[0]) / 2, (lon + closest[1]) / 2];
-        const dist = haversineDistance([lat, lon], closest).toFixed(2);
+        const mid = [(node[0] + closest[0]) / 2, (node[1] + closest[1]) / 2];
+        const dist = haversineDistance(node, closest).toFixed(2);
         L.marker(mid, {
           icon: L.divIcon({
             className: '',
@@ -230,9 +207,9 @@
       }
     }
 
-    function closestPointOnSegment(point, segment) {
-      const [x, y] = point;
-      const [[x1, y1], [x2, y2]] = segment;
+    function closestPointOnSegment(p, seg) {
+      const [x, y] = p;
+      const [[x1, y1], [x2, y2]] = seg;
       const dx = x2 - x1, dy = y2 - y1;
       const l2 = dx * dx + dy * dy;
       if (l2 === 0) return [x1, y1];
@@ -242,17 +219,17 @@
     }
 
     function haversineDistance(coord1, coord2) {
-      const R = 6371e3; // Earth radius in meters
-      const lat1 = coord1[0] * Math.PI / 180;
-      const lat2 = coord2[0] * Math.PI / 180;
-      const deltaLat = (coord2[0] - coord1[0]) * Math.PI / 180;
-      const deltaLon = (coord2[1] - coord1[1]) * Math.PI / 180;
-      const a = Math.sin(deltaLat / 2) * Math.sin(deltaLat / 2) +
-                Math.cos(lat1) * Math.cos(lat2) *
-                Math.sin(deltaLon / 2) * Math.sin(deltaLon / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
+      const R = 6371000;
+      const toRad = deg => deg * Math.PI / 180;
+      const dLat = toRad(coord2[0] - coord1[0]);
+      const dLon = toRad(coord2[1] - coord1[1]);
+      const lat1 = toRad(coord1[0]);
+      const lat2 = toRad(coord2[0]);
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
   </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
 </body>
 </html>

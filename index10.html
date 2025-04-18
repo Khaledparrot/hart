@@ -49,6 +49,7 @@ const map = L.map('map', {
   maxZoom: 22,
   minZoom: 2
 });
+
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '&copy; OpenStreetMap & CartoDB',
   maxZoom: 22
@@ -57,21 +58,18 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 const refLat = 36.709639;
 const refLon = 3.164972;
 const meterToDegLat = 1 / 111320;
+function getMeterToDegLon(lat) {
+  return 1 / (111320 * Math.cos(lat * Math.PI / 180));
+}
+
 let drawnShape = null;
-let redNodes = [];
+const redNodes = [];
 const nodeLayer = L.layerGroup().addTo(map);
 const gridLayer = L.layerGroup().addTo(map);
 const drawnItems = new L.FeatureGroup().addTo(map);
 const distanceLayer = L.layerGroup().addTo(map);
 
-function getMeterToDegLon(lat) {
-  return 1 / (111320 * Math.cos(lat * Math.PI / 180));
-}
-
 function drawGrid() {
-  gridLayer.clearLayers();
-  if (map.getZoom() < 18) return;
-
   const bounds = map.getBounds();
   const spacingLat = 2 * meterToDegLat;
   const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
@@ -80,14 +78,20 @@ function drawGrid() {
   const lonMin = bounds.getWest();
   const lonMax = bounds.getEast();
 
-  for (let lat = refLat; lat < latMax; lat += spacingLat)
-    if (lat > latMin) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
-  for (let lat = refLat; lat > latMin; lat -= spacingLat)
-    if (lat < latMax) gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
-  for (let lon = refLon; lon < lonMax; lon += spacingLon)
-    if (lon > lonMin) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
-  for (let lon = refLon; lon > lonMin; lon -= spacingLon)
-    if (lon < lonMax) gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
+  gridLayer.clearLayers();
+  if (map.getZoom() < 17) return;
+
+  let startLat = refLat;
+  while (startLat > latMin) startLat -= spacingLat;
+  let startLon = refLon;
+  while (startLon > lonMin) startLon -= spacingLon;
+
+  for (let lat = startLat; lat <= latMax; lat += spacingLat) {
+    gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
+  }
+  for (let lon = startLon; lon <= lonMax; lon += spacingLon) {
+    gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
+  }
 }
 map.on('moveend zoomend', drawGrid);
 drawGrid();
@@ -102,20 +106,10 @@ function askLocation() {
 
 const drawControl = new L.Control.Draw({
   draw: {
-    polygon: {
-      allowIntersection: false,
-      showArea: true
-    },
-    polyline: false,
-    rectangle: false,
-    circle: false,
-    marker: false,
-    circlemarker: false
+    polygon: { allowIntersection: false, showArea: true },
+    polyline: false, rectangle: false, circle: false, marker: false, circlemarker: false
   },
-  edit: {
-    featureGroup: drawnItems,
-    remove: true
-  }
+  edit: { featureGroup: drawnItems, remove: true }
 });
 map.addControl(drawControl);
 
@@ -129,40 +123,56 @@ map.on('draw:created', function (e) {
     drawnItems.clearLayers();
     nodeLayer.clearLayers();
     distanceLayer.clearLayers();
-    redNodes = [];
   }
-
   drawnShape = e.layer;
   drawnItems.addLayer(drawnShape);
   document.querySelector('#showBtn').style.display = 'inline';
   document.querySelector('#clearBtn').style.display = 'inline';
 });
 
+function pointInsidePolygon(point, polygon) {
+  let inside = false;
+  let x = point.lat, y = point.lng;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i].lat, yi = polygon[i].lng;
+    const xj = polygon[j].lat, yj = polygon[j].lng;
+    const intersect = ((yi > y) !== (yj > y)) &&
+                      (x < (xj - xi) * (y - yi) / (yj - yi + 0.00000001) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 function showIntersections() {
-  if (!drawnShape) return;
+  if (!drawnShape || map.getZoom() < 19) {
+    alert("Zoom in more to see intersections (Zoom ≥ 19)");
+    return;
+  }
 
   nodeLayer.clearLayers();
   distanceLayer.clearLayers();
-  redNodes = [];
+  redNodes.length = 0;
 
   const shape = drawnShape.getLatLngs()[0];
   const bounds = drawnShape.getBounds();
   const spacingLat = 2 * meterToDegLat;
   const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
 
-  for (let lat = bounds.getSouth(); lat <= bounds.getNorth(); lat += spacingLat) {
-    for (let lon = bounds.getWest(); lon <= bounds.getEast(); lon += spacingLon) {
+  let startLat = refLat;
+  while (startLat > bounds.getSouth()) startLat -= spacingLat;
+  let startLon = refLon;
+  while (startLon > bounds.getWest()) startLon -= spacingLon;
+
+  for (let lat = startLat; lat <= bounds.getNorth(); lat += spacingLat) {
+    for (let lon = startLon; lon <= bounds.getEast(); lon += spacingLon) {
       const point = L.latLng(lat, lon);
       if (pointInsidePolygon(point, shape)) {
         const red = L.circleMarker(point, {
-          color: 'red',
-          fillColor: 'red',
-          radius: 5,
-          fillOpacity: 1
+          color: 'red', fillColor: 'red', radius: 5, fillOpacity: 1
         }).addTo(nodeLayer);
-
+        
         red.on('click', () => {
-          distanceLayer.clearLayers();
+          distanceLayer.clearLayers(); // remove previous distances
           drawDistancesToEdges(point, shape);
         });
 
@@ -172,68 +182,30 @@ function showIntersections() {
   }
 }
 
-function pointInsidePolygon(point, vs) {
-  let x = point.lat, y = point.lng;
-  let inside = false;
-  for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
-    const xi = vs[i].lat, yi = vs[i].lng;
-    const xj = vs[j].lat, yj = vs[j].lng;
-
-    const intersect = ((yi > y) !== (yj > y)) &&
-                      (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
-
-function drawDistancesToEdges(point, polygon) {
-  for (let i = 0; i < polygon.length; i++) {
-    const a = polygon[i];
-    const b = polygon[(i + 1) % polygon.length];
+function drawDistancesToEdges(point, shape) {
+  for (let i = 0; i < shape.length; i++) {
+    const a = shape[i];
+    const b = shape[(i + 1) % shape.length];
     const closest = getClosestPointOnSegment(point, a, b);
 
-    if (closest) {
-      L.polyline([point, closest], { color: 'blue', weight: 1 }).addTo(distanceLayer);
-      const meters = map.distance(point, closest).toFixed(2);
-      L.marker(closest, {
-        icon: L.divIcon({
-          className: 'label',
-          html: `<div style="background:white;padding:2px 4px;border-radius:4px;border:1px solid gray;">${meters} m</div>`
-        })
-      }).addTo(distanceLayer);
-    }
+    L.polyline([point, closest], { color: 'blue', weight: 1 }).addTo(distanceLayer);
+    const meters = map.distance(point, closest).toFixed(2);
+    L.marker(closest, {
+      icon: L.divIcon({
+        className: 'label',
+        html: `<div style="background:white;padding:2px 4px;border-radius:4px;border:1px solid gray;">${meters} m</div>`
+      })
+    }).addTo(distanceLayer);
   }
 }
 
 function getClosestPointOnSegment(p, a, b) {
-  const latLngToXY = ll => {
-    const latRad = ll.lat * Math.PI / 180;
-    return {
-      x: ll.lng * 40075000 * Math.cos(latRad) / 360,
-      y: ll.lat * 111320
-    };
-  };
-
-  const pa = latLngToXY(a);
-  const pb = latLngToXY(b);
-  const pp = latLngToXY(p);
-
-  const dx = pb.x - pa.x;
-  const dy = pb.y - pa.y;
-  const lengthSq = dx * dx + dy * dy;
-
-  const t = ((pp.x - pa.x) * dx + (pp.y - pa.y) * dy) / lengthSq;
-
-  if (t >= 0 && t <= 1) {
-    const projX = pa.x + t * dx;
-    const projY = pa.y + t * dy;
-
-    const lng = projX / (40075000 * Math.cos(p.lat * Math.PI / 180) / 360);
-    const lat = projY / 111320;
-    return L.latLng(lat, lng);
-  } else {
-    return null;
-  }
+  const ax = a.lat, ay = a.lng;
+  const bx = b.lat, by = b.lng;
+  const px = p.lat, py = p.lng;
+  const dx = bx - ax, dy = by - ay;
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+  return L.latLng(ax + t * dx, ay + t * dy);
 }
 
 function clearRoom() {
@@ -241,7 +213,7 @@ function clearRoom() {
   nodeLayer.clearLayers();
   distanceLayer.clearLayers();
   drawnShape = null;
-  redNodes = [];
+  redNodes.length = 0;
   document.querySelector('#showBtn').style.display = 'none';
   document.querySelector('#clearBtn').style.display = 'none';
 }

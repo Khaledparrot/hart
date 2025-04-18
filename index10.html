@@ -79,7 +79,7 @@ function drawGrid() {
   const lonMax = bounds.getEast();
 
   gridLayer.clearLayers();
-  if (map.getZoom() < 17) return;
+  if (map.getZoom() < 20) return;
 
   let startLat = refLat;
   while (startLat > latMin) startLat -= spacingLat;

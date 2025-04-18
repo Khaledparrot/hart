@@ -193,7 +193,7 @@ function drawDistancesToEdges(point, shape) {
     L.marker(closest, {
       icon: L.divIcon({
         className: 'label',
-        html: `<div style="background:white;padding:2px 4px;border-radius:4px;border:1px solid gray;">${meters} m</div>`
+        html: `<div style="background:white;padding:2px 4px;border-radius:4px;">${meters} m</div>`
       })
     }).addTo(distanceLayer);
   }

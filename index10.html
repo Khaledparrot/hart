@@ -200,12 +200,62 @@ function drawDistancesToEdges(point, shape) {
 }
 
 function getClosestPointOnSegment(p, a, b) {
-  const ax = a.lat, ay = a.lng;
-  const bx = b.lat, by = b.lng;
-  const px = p.lat, py = p.lng;
-  const dx = bx - ax, dy = by - ay;
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
-  return L.latLng(ax + t * dx, ay + t * dy);
+  // Convert lat/lng to Cartesian for small distance math
+  const latLngToXY = ll => {
+    const latRad = ll.lat * Math.PI / 180;
+    return {
+      x: ll.lng * 40075000 * Math.cos(latRad) / 360,
+      y: ll.lat * 111320
+    };
+  };
+
+  const pa = latLngToXY(a);
+  const pb = latLngToXY(b);
+  const pp = latLngToXY(p);
+
+  const dx = pb.x - pa.x;
+  const dy = pb.y - pa.y;
+  const lengthSq = dx * dx + dy * dy;
+
+  const t = ((pp.x - pa.x) * dx + (pp.y - pa.y) * dy) / lengthSq;
+
+  if (t >= 0 && t <= 1) {
+    // Projection lies within segment
+    const projX = pa.x + t * dx;
+    const projY = pa.y + t * dy;
+
+    // Convert back to lat/lng
+    const lng = projX / (40075000 * Math.cos(p.lat * Math.PI / 180) / 360);
+    const lat = projY / 111320;
+
+    return L.latLng(lat, lng);
+  } else {
+    return null; // Outside segment
+  }
+}
+Then update this part of drawDistancesToEdges():
+Replace this:
+
+javascript
+Copy
+Edit
+const closest = getClosestPointOnSegment(point, a, b);
+L.polyline([point, closest], ...
+With:
+
+javascript
+Copy
+Edit
+const closest = getClosestPointOnSegment(point, a, b);
+if (closest) {
+  L.polyline([point, closest], { color: 'blue', weight: 1 }).addTo(distanceLayer);
+  const meters = map.distance(point, closest).toFixed(2);
+  L.marker(closest, {
+    icon: L.divIcon({
+      className: 'label',
+      html: `<div style="background:white;padding:2px 4px;border-radius:4px;border:1px solid gray;">${meters} m</div>`
+    })
+  }).addTo(distanceLayer);
 }
 
 function clearRoom() {

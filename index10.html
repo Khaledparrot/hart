@@ -6,6 +6,7 @@
   <title>Hartmann Grid Tracker</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <style>
   html, body, #map { height: 100%; margin: 0; padding: 0; }
 
@@ -81,7 +82,7 @@
 </head>
 <body>
 <div id="controls">
-  <button onclick="askLocation()">📍 Get Location</button>
+  <button onclick="askLocation()"><i class="fas fa-map-marker-alt"></i></button>
  <!-- <button onclick="startDrawing()">✏️ Draw Room</button>-->
   <button onclick="showIntersections()" id="showBtn" style="display:none;">🔴 Show Intersections on Room</button>
   <button onclick="clearRoom()" id="clearBtn" style="display:none;">🧹 Clear Room and Nodes</button>

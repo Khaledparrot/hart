@@ -305,31 +305,29 @@ function clearRoom() {
 <div id="tutorialModal" class="tutorial-modal">
   <div class="tutorial-content">
     <span class="close-btn" onclick="closeTutorial()">&times;</span>
-    <h2>Welcome to the Hartmann Grid Tracker!</h2>
-    <p>This app helps you track your position on the Hartmann grid. Here's a quick guide:</p>
+    <h2>Bienvenue sur le Suivi du Réseau de Hartmann !</h2>
+    <p>Cette application vous aide à suivre votre position sur le réseau de Hartmann. Voici un guide rapide :</p>
     <ul>
-      <li>Click the <i class="fas fa-map-marker-alt"></i> button to center the map on your current location.</li>
-      <li>Draw a room by clicking the <i class="fas fa-eye"></i> button.</li>
-      <li>Click on a red intersection to measure distances to the room walls.</li>
+      <li>Cliquez sur le bouton <i class="fas fa-map-marker-alt"></i> pour centrer la carte sur votre position actuelle.</li>
+      <li>Dessinez une pièce à l'aide des outils situés à droite .</li>
+      <li>Cliquez sur le bouton <i class="fas fa-eye"></i> pour afficher les intersections à l’intérieur de la pièce sélectionnée.</li>
+      <li>Cliquez sur une intersection rouge pour mesurer les distances jusqu'aux murs de la pièce.</li>
+      <li>Cliquez sur le bouton <i class="fas fa-eraser"></i> pour effacer toutes les pièces sélectionnées.</li>
     </ul>
-    <p>Click "Got it!" to close this tutorial and start using the app.</p>
-    <button onclick="closeTutorial()">Got it!</button>
+    <p>Cliquez sur "X" pour fermer ce tutoriel et commencer à utiliser l'application.</p>
   </div>
 </div>
 
   <script>
-    // Check if the user has already seen the tutorial
+
     if (!localStorage.getItem('tutorialSeen')) {
       // Show the tutorial modal
       document.getElementById('tutorialModal').style.display = 'block';
     }
-
-    // Close the tutorial modal
     function closeTutorial() {
-      // Set the flag in localStorage to prevent showing the tutorial again
+
       localStorage.setItem('tutorialSeen', 'true');
       
-      // Hide the modal
       document.getElementById('tutorialModal').style.display = 'none';
     }
   </script>

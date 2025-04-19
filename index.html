@@ -183,7 +183,11 @@ function askLocation() {
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(pos => {
       map.setView([pos.coords.latitude, pos.coords.longitude], 20);
-    }, err => alert("Geolocation error: " + err.message), {enableHighAccuracy: true});
+    }, err => {
+      alert("Geolocation error: " + err.message);
+    }, {enableHighAccuracy: true, timeout: 10000, maximumAge: 0});
+  } else {
+    alert("Geolocation is not supported by this browser.");
   }
 }
 
@@ -237,101 +241,39 @@ function showIntersections() {
   redNodes.length = 0;
 
   const shape = drawnShape.getLatLngs()[0];
-  const bounds = drawnShape.getBounds();
-  const spacingLat = 2 * meterToDegLat;
-  const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
+  const intersections = [];
 
-  let startLat = refLat;
-  while (startLat > bounds.getSouth()) startLat -= spacingLat;
-  let startLon = refLon;
-  while (startLon > bounds.getWest()) startLon -= spacingLon;
-
-  for (let lat = startLat; lat <= bounds.getNorth(); lat += spacingLat) {
-    for (let lon = startLon; lon <= bounds.getEast(); lon += spacingLon) {
-      const point = L.latLng(lat, lon);
-      if (pointInsidePolygon(point, shape)) {
-        const red = L.circleMarker(point, {
-          color: 'red', fillColor: 'red', radius: 5, fillOpacity: 1
-        }).addTo(nodeLayer);
-        
-        red.on('click', () => {
-          distanceLayer.clearLayers(); // remove previous distances
-          drawDistancesToEdges(point, shape);
+  gridLayer.eachLayer(function (layer) {
+    const latlng = layer.getLatLng();
+    if (pointInsidePolygon(latlng, shape)) {
+      intersections.push(latlng);
+      const marker = L.circleMarker(latlng, {color: 'red', radius: 5}).addTo(nodeLayer);
+      redNodes.push(marker);
+      marker.on('click', function () {
+        distanceLayer.clearLayers();
+        redNodes.forEach(node => {
+          if (node !== marker) node.setStyle({color: 'green'});
         });
 
-        redNodes.push(red);
-      }
+        const lines = [];
+        shape.forEach((latlng, i) => {
+          const nextLatlng = shape[i + 1] || shape[0];
+          const line = L.polyline([latlng, nextLatlng], {color: 'red'}).addTo(distanceLayer);
+          lines.push(line);
+        });
+      });
     }
-  }
-}
-
-function drawDistancesToEdges(point, shape) {
-  for (let i = 0; i < shape.length; i++) {
-    const a = shape[i];
-    const b = shape[(i + 1) % shape.length];
-    const closest = getClosestPointOnSegment(point, a, b);
-
-    L.polyline([point, closest], { color: 'blue', weight: 1 }).addTo(distanceLayer);
-    const meters = map.distance(point, closest).toFixed(2);
-    L.marker(closest, {
-      icon: L.divIcon({
-        className: 'label',
-        html: `<div font-weight:bold;>${meters} m</div>`
-      })
-    }).addTo(distanceLayer);
-  }
-}
-
-function getClosestPointOnSegment(p, a, b) {
-  const ax = a.lat, ay = a.lng;
-  const bx = b.lat, by = b.lng;
-  const px = p.lat, py = p.lng;
-  const dx = bx - ax, dy = by - ay;
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
-  return L.latLng(ax + t * dx, ay + t * dy);
+  });
+  document.querySelector('#showBtn').style.display = 'none';
 }
 
 function clearRoom() {
   drawnItems.clearLayers();
   nodeLayer.clearLayers();
   distanceLayer.clearLayers();
-  drawnShape = null;
-  redNodes.length = 0;
   document.querySelector('#showBtn').style.display = 'none';
   document.querySelector('#clearBtn').style.display = 'none';
 }
 </script>
-<!-- tuto -->
-<div id="tutorialModal" class="tutorial-modal">
-  <div class="tutorial-content">
-    <span class="close-btn" onclick="closeTutorial()">&times;</span>
-    <h2>Bienvenue sur le Suivi du Réseau de Hartmann !</h2>
-    <p>Cette application vous aide à suivre votre position sur le réseau de Hartmann. Voici un guide rapide :</p>
-    <ul>
-      <li>Cliquez sur le bouton <i class="fas fa-map-marker-alt"></i> pour centrer la carte sur votre position actuelle.</li>
-      <li>Dessinez une pièce à l'aide des outils situés à droite .</li>
-      <li>Cliquez sur le bouton <i class="fas fa-eye"></i> pour afficher les intersections à l’intérieur de la pièce sélectionnée.</li>
-      <li>Cliquez sur une intersection rouge pour mesurer les distances jusqu'aux murs de la pièce.</li>
-      <li>Cliquez sur le bouton <i class="fas fa-eraser"></i> pour effacer toutes les pièces sélectionnées.</li>
-    </ul>
-    <p>Cliquez sur "X" pour fermer ce tutoriel et commencer à utiliser l'application.</p>
-  </div>
-</div>
-
-  <script>
-
-    if (!localStorage.getItem('tutorialSeen')) {
-      // Show the tutorial modal
-      document.getElementById('tutorialModal').style.display = 'block';
-    }
-    function closeTutorial() {
-
-      localStorage.setItem('tutorialSeen', 'true');
-      
-      document.getElementById('tutorialModal').style.display = 'none';
-    }
-  </script>
-
-  
 </body>
 </html>

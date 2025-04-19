@@ -8,12 +8,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <style>
-  html, body, #map { 
-    height: 100%; 
-    margin: 0; 
-    padding: 0; 
-    touch-action: manipulation;
-  }
+  html, body, #map { height: 100%; margin: 0; padding: 0; }
 
   #controls {
     position: absolute;
@@ -27,6 +22,7 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.2);
   }
 
+  /* Style for buttons to mimic drawing tool style */
   button {
     padding: 6px 12px;
     font-size: 14px;
@@ -40,16 +36,19 @@
     transition: background-color 0.2s ease, border-color 0.2s ease;
   }
 
+  /* Hover effect */
   button:hover {
     background-color: #f1f1f1;
     border-color: #555;
   }
 
+  /* Active effect */
   button:active {
     background-color: #e6e6e6;
     border-color: #555;
   }
 
+  /* Specifically style the 'Show Intersections' and 'Clear' buttons */
   #showBtn, #clearBtn {
     background-color: #ffffff;
     border: 1px solid #bbb;
@@ -73,76 +72,75 @@
     border-color: #555;
   }
 
+  /* Optional: Add focus styles for better accessibility */
   button:focus {
     outline: none;
     box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.5);
   }
 
-  .location-loading {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 10px 20px;
-    border-radius: 5px;
-    z-index: 1001;
-    display: none;
-  }
+/*tuto*/
+.tutorial-modal {
+  display: none; /* Hidden by default */
+  position: fixed; /* Stay in place */
+  z-index: 1000; /* Sit on top */
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5); /* Black background with transparency */
+}
 
-  .tutorial-modal {
-    display: none;
-    position: fixed;
-    z-index: 1000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-  }
+.tutorial-content {
+  background-color: white;
+  margin: 15% auto;
+  padding: 20px;
+  border-radius: 10px;
+  width: 80%;
+  max-width: 500px;
+}
 
-  .tutorial-content {
-    background-color: white;
-    margin: 15% auto;
-    padding: 20px;
-    border-radius: 10px;
-    width: 80%;
-    max-width: 500px;
-  }
+.close-btn {
+  color: black;
+  font-size: 30px;
+  font-weight: bold;
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  cursor: pointer;
+}
 
-  .close-btn {
-    color: black;
-    font-size: 30px;
-    font-weight: bold;
-    position: absolute;
-    top: 10px;
-    right: 20px;
-    cursor: pointer;
-  }
-</style>
+/* Added for mobile fixes */
+.leaflet-container {
+  background: #fff !important;
+}
+  </style>
 </head>
 <body>
 <div id="controls">
   <button onclick="askLocation()"><i class="fas fa-map-marker-alt"></i></button>
+ <!-- <button onclick="startDrawing()">✏️ Draw Room</button>-->
   <button onclick="showIntersections()" id="showBtn" style="display:none;"><i class="fas fa-eye"></i></button>
   <button onclick="clearRoom()" id="clearBtn" style="display:none;"><i class="fas fa-eraser"></i></button>
 </div>
 <div id="map"></div>
-<div id="locationLoading" class="location-loading">
-  <i class="fas fa-spinner fa-spin"></i> Getting your location...
-</div>
 
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script>
-// Initialize map
+// Initialize map with proper zoom control
 const map = L.map('map', {
   center: [36.709639, 3.164972],
   zoom: 19,
   maxZoom: 22,
-  minZoom: 2
-});
+  minZoom: 2,
+  zoomControl: true
+}).setView([36.709639, 3.164972], 19);
+
+// Add touch-friendly zoom control
+L.control.zoom({
+  zoomInTitle: 'Zoom in',
+  zoomOutTitle: 'Zoom out'
+}).addTo(map);
 
 // Add base layer
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -206,24 +204,24 @@ drawGrid();
 function askLocation() {
   const locationButton = document.querySelector('#controls button:first-child');
   const originalContent = locationButton.innerHTML;
-  const loadingElement = document.getElementById('locationLoading');
   
-  if (navigator.geolocation) {
-    // Clear any existing watcher
-    if (positionWatcher) {
-      navigator.geolocation.clearWatch(positionWatcher);
-    }
-    if (accuracyCircle) {
-      map.removeLayer(accuracyCircle);
-    }
-    if (userMarker) {
-      map.removeLayer(userMarker);
-    }
+  // Clear any existing location markers and watcher
+  if (positionWatcher) {
+    navigator.geolocation.clearWatch(positionWatcher);
+    positionWatcher = null;
+  }
+  if (accuracyCircle) {
+    map.removeLayer(accuracyCircle);
+    accuracyCircle = null;
+  }
+  if (userMarker) {
+    map.removeLayer(userMarker);
+    userMarker = null;
+  }
 
-    // Show loading state
+  if (navigator.geolocation) {
     locationButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     locationButton.disabled = true;
-    loadingElement.style.display = 'block';
     
     positionWatcher = navigator.geolocation.watchPosition(
       (pos) => {
@@ -256,13 +254,11 @@ function askLocation() {
         // Restore button state
         locationButton.innerHTML = originalContent;
         locationButton.disabled = false;
-        loadingElement.style.display = 'none';
       },
       (err) => {
         console.error("Geolocation error:", err);
         locationButton.innerHTML = originalContent;
         locationButton.disabled = false;
-        loadingElement.style.display = 'none';
         
         let errorMessage = "Could not get your location";
         switch(err.code) {
@@ -283,7 +279,7 @@ function askLocation() {
   }
 }
 
-// Rest of your original functions remain the same
+// Rest of your original functions remain exactly the same
 const drawControl = new L.Control.Draw({
   draw: {
     polygon: { allowIntersection: false, showArea: true },
@@ -398,23 +394,21 @@ function clearRoom() {
   document.querySelector('#clearBtn').style.display = 'none';
 }
 
-// Handle orientation changes for mobile
+// Mobile-specific fixes
+document.addEventListener('touchmove', function(e) {
+  if (e.target.classList.contains('leaflet-container')) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
 window.addEventListener('orientationchange', function() {
-  setTimeout(map.invalidateSize.bind(map), 300);
+  setTimeout(function() {
+    map.invalidateSize();
+  }, 200);
 });
-
-// Tutorial modal
-if (!localStorage.getItem('tutorialSeen')) {
-  document.getElementById('tutorialModal').style.display = 'block';
-}
-
-function closeTutorial() {
-  localStorage.setItem('tutorialSeen', 'true');
-  document.getElementById('tutorialModal').style.display = 'none';
-}
 </script>
 
-<!-- Tutorial Modal -->
+<!-- tuto -->
 <div id="tutorialModal" class="tutorial-modal">
   <div class="tutorial-content">
     <span class="close-btn" onclick="closeTutorial()">&times;</span>
@@ -430,5 +424,15 @@ function closeTutorial() {
     <p>Cliquez sur "X" pour fermer ce tutoriel et commencer à utiliser l'application.</p>
   </div>
 </div>
+
+  <script>
+    if (!localStorage.getItem('tutorialSeen')) {
+      document.getElementById('tutorialModal').style.display = 'block';
+    }
+    function closeTutorial() {
+      localStorage.setItem('tutorialSeen', 'true');
+      document.getElementById('tutorialModal').style.display = 'none';
+    }
+  </script>
 </body>
 </html>

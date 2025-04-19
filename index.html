@@ -2,13 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Hartmann Grid Tracker</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <style>
-  /* YOUR ORIGINAL STYLES HERE - NOT CHANGED */
   html, body, #map { height: 100%; margin: 0; padding: 0; }
 
   #controls {
@@ -23,6 +22,7 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.2);
   }
 
+  /* Style for buttons to mimic drawing tool style */
   button {
     padding: 6px 12px;
     font-size: 14px;
@@ -36,16 +36,19 @@
     transition: background-color 0.2s ease, border-color 0.2s ease;
   }
 
+  /* Hover effect */
   button:hover {
     background-color: #f1f1f1;
     border-color: #555;
   }
 
+  /* Active effect */
   button:active {
     background-color: #e6e6e6;
     border-color: #555;
   }
 
+  /* Specifically style the 'Show Intersections' and 'Clear' buttons */
   #showBtn, #clearBtn {
     background-color: #ffffff;
     border: 1px solid #bbb;
@@ -69,46 +72,52 @@
     border-color: #555;
   }
 
+  /* Optional: Add focus styles for better accessibility */
   button:focus {
     outline: none;
     box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.5);
   }
 
-  .tutorial-modal {
-    display: none;
-    position: fixed;
-    z-index: 1000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-  }
+/*tuto*/
+.tutorial-modal {
+  display: none; /* Hidden by default */
+  position: fixed; /* Stay in place */
+  z-index: 1000; /* Sit on top */
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5); /* Black background with transparency */
+}
 
-  .tutorial-content {
-    background-color: white;
-    margin: 15% auto;
-    padding: 20px;
-    border-radius: 10px;
-    width: 80%;
-    max-width: 500px;
-  }
+.tutorial-content {
+  background-color: white;
+  margin: 15% auto;
+  padding: 20px;
+  border-radius: 10px;
+  width: 80%;
+  max-width: 500px;
+}
 
-  .close-btn {
-    color: black;
-    font-size: 30px;
-    font-weight: bold;
-    position: absolute;
-    top: 10px;
-    right: 20px;
-    cursor: pointer;
-  }
-  </style>
+.close-btn {
+  color: black;
+  font-size: 30px;
+  font-weight: bold;
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  cursor: pointer;
+}
+
+
+</style>
+
+
 </head>
 <body>
-<!-- YOUR ORIGINAL HTML STRUCTURE - NOT CHANGED -->
 <div id="controls">
   <button onclick="askLocation()"><i class="fas fa-map-marker-alt"></i></button>
+ <!-- <button onclick="startDrawing()">✏️ Draw Room</button>-->
   <button onclick="showIntersections()" id="showBtn" style="display:none;"><i class="fas fa-eye"></i></button>
   <button onclick="clearRoom()" id="clearBtn" style="display:none;"><i class="fas fa-eraser"></i></button>
 </div>
@@ -117,7 +126,6 @@
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script>
-// YOUR ORIGINAL CODE - ONLY GPS FUNCTION MODIFIED
 const map = L.map('map', {
   center: [36.709639, 3.164972],
   zoom: 19,
@@ -171,41 +179,33 @@ function drawGrid() {
 map.on('moveend zoomend', drawGrid);
 drawGrid();
 
-// ONLY THIS FUNCTION WAS MODIFIED - ADDED 5s DELAY AND MARKER CLEANUP
-let lastLocationUpdate = 0;
-let locationMarker = null;
-let accuracyCircle = null;
+let watchId = null;
 
 function askLocation() {
   if (navigator.geolocation) {
-    // Clear previous markers
-    if (locationMarker) map.removeLayer(locationMarker);
-    if (accuracyCircle) map.removeLayer(accuracyCircle);
-    
-    // Check if 5 seconds have passed since last update
-    const now = Date.now();
-    if (now - lastLocationUpdate < 5000) return;
-    lastLocationUpdate = now;
-    
-    navigator.geolocation.getCurrentPosition(pos => {
-      // Clear previous markers again in case of multiple rapid calls
-      if (locationMarker) map.removeLayer(locationMarker);
-      if (accuracyCircle) map.removeLayer(accuracyCircle);
-      
-      // Create new markers
-      locationMarker = L.marker([pos.coords.latitude, pos.coords.longitude]).addTo(map);
-      accuracyCircle = L.circle([pos.coords.latitude, pos.coords.longitude], {
-        radius: pos.coords.accuracy,
-        color: '#3388ff',
-        fillOpacity: 0.2
-      }).addTo(map);
-      
-      map.setView([pos.coords.latitude, pos.coords.longitude], 20);
-    }, err => alert("Geolocation error: " + err.message), {enableHighAccuracy: true});
+    if (watchId !== null) {
+      navigator.geolocation.clearWatch(watchId);
+    }
+
+    watchId = navigator.geolocation.watchPosition(pos => {
+      const { latitude, longitude, accuracy } = pos.coords;
+
+      // Optional: Only set the view once if accuracy is good
+      if (accuracy < 20) {
+        map.setView([latitude, longitude], 20);
+        navigator.geolocation.clearWatch(watchId); // stop watching after getting a good fix
+        watchId = null;
+      }
+    }, err => {
+      alert("Geolocation error: " + err.message);
+    }, {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 10000 // set a timeout to avoid hanging
+    });
   }
 }
 
-// REST OF YOUR ORIGINAL FUNCTIONS REMAIN EXACTLY THE SAME
 const drawControl = new L.Control.Draw({
   draw: {
     polygon: { allowIntersection: false, showArea: true },
@@ -274,7 +274,7 @@ function showIntersections() {
         }).addTo(nodeLayer);
         
         red.on('click', () => {
-          distanceLayer.clearLayers();
+          distanceLayer.clearLayers(); // remove previous distances
           drawDistancesToEdges(point, shape);
         });
 
@@ -306,7 +306,7 @@ function getClosestPointOnSegment(p, a, b) {
   const bx = b.lat, by = b.lng;
   const px = p.lat, py = p.lng;
   const dx = bx - ax, dy = by - ay;
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy));
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
   return L.latLng(ax + t * dx, ay + t * dy);
 }
 
@@ -319,26 +319,8 @@ function clearRoom() {
   document.querySelector('#showBtn').style.display = 'none';
   document.querySelector('#clearBtn').style.display = 'none';
 }
-
-// Added mobile zoom fix
-document.addEventListener('touchmove', function(e) {
-  if (e.target.classList.contains('leaflet-container')) {
-    e.preventDefault();
-  }
-}, { passive: false });
-
-// YOUR ORIGINAL TUTORIAL CODE
-if (!localStorage.getItem('tutorialSeen')) {
-  document.getElementById('tutorialModal').style.display = 'block';
-}
-
-function closeTutorial() {
-  localStorage.setItem('tutorialSeen', 'true');
-  document.getElementById('tutorialModal').style.display = 'none';
-}
 </script>
-
-<!-- YOUR ORIGINAL TUTORIAL MODAL -->
+<!-- tuto -->
 <div id="tutorialModal" class="tutorial-modal">
   <div class="tutorial-content">
     <span class="close-btn" onclick="closeTutorial()">&times;</span>
@@ -346,13 +328,29 @@ function closeTutorial() {
     <p>Cette application vous aide à suivre votre position sur le réseau de Hartmann. Voici un guide rapide :</p>
     <ul>
       <li>Cliquez sur le bouton <i class="fas fa-map-marker-alt"></i> pour centrer la carte sur votre position actuelle.</li>
-      <li>Dessinez une pièce à l'aide des outils situés à droite.</li>
-      <li>Cliquez sur le bouton <i class="fas fa-eye"></i> pour afficher les intersections à l'intérieur de la pièce sélectionnée.</li>
+      <li>Dessinez une pièce à l'aide des outils situés à droite .</li>
+      <li>Cliquez sur le bouton <i class="fas fa-eye"></i> pour afficher les intersections à l’intérieur de la pièce sélectionnée.</li>
       <li>Cliquez sur une intersection rouge pour mesurer les distances jusqu'aux murs de la pièce.</li>
       <li>Cliquez sur le bouton <i class="fas fa-eraser"></i> pour effacer toutes les pièces sélectionnées.</li>
     </ul>
     <p>Cliquez sur "X" pour fermer ce tutoriel et commencer à utiliser l'application.</p>
   </div>
 </div>
+
+  <script>
+
+    if (!localStorage.getItem('tutorialSeen')) {
+      // Show the tutorial modal
+      document.getElementById('tutorialModal').style.display = 'block';
+    }
+    function closeTutorial() {
+
+      localStorage.setItem('tutorialSeen', 'true');
+      
+      document.getElementById('tutorialModal').style.display = 'none';
+    }
+  </script>
+
+  
 </body>
 </html>

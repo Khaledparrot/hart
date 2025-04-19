@@ -1,104 +1,157 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Hartmann Grid</title>
+  <meta charset="utf-8" />
+  <title>Hartmann Grid Tracker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css" />
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-sA+vx6kG2zZ2zLMp5e6vYtOxO1lR2HkSg+YIzP8GHr8="
+    crossorigin=""
+  />
   <style>
-    #map {
-      height: 100vh;
-      width: 100%;
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      padding: 0;
     }
-    .loading {
-      position: absolute;
-      top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: white;
-      padding: 5px 10px;
-      border: 1px solid #ccc;
-      z-index: 9999;
+    .leaflet-container {
+      font-family: Arial, sans-serif;
     }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div id="loading" class="loading" style="display:none;">Getting location...</div>
-  <script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
-  <script>
-    const map = L.map('map').setView([0, 0], 2);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-o9N1j7kPtv8FG6Z5SjKzN2LMp0T8Q2luY7WxCkTgFoA="
+    crossorigin=""></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+
+  <script>
+    const map = L.map("map").setView([36.75, 3.05], 19);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 22,
-      attribution: '© OpenStreetMap contributors'
+      attribution: "© OpenStreetMap"
     }).addTo(map);
 
-    let lastGridBounds = null;
+    // ---------- GPS tracking (location.js logic, updated for mobile) ----------
+    let currentLocation = null;
+    let userMarker = null;
+    let accuracyCircle = null;
+    let watchId = null;
 
-    function drawGrid() {
-      if (map.getZoom() < 20) return;
+    function updateLocation(position) {
+      currentLocation = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        accuracy: position.coords.accuracy
+      };
 
-      const bounds = map.getBounds();
-      const newBounds = bounds.toBBoxString();
-      if (newBounds === lastGridBounds) return;
-
-      lastGridBounds = newBounds;
-      const intervalNS = 2 / 111320; // 2 meters in degrees latitude
-      const intervalEW = 2.5 / (40075000 * Math.cos(map.getCenter().lat * Math.PI / 180) / 360); // 2.5 meters in degrees longitude
-
-      for (let lat = Math.floor(bounds.getSouth() / intervalNS) * intervalNS; lat <= bounds.getNorth(); lat += intervalNS) {
-        L.polyline([[lat, bounds.getWest()], [lat, bounds.getEast()]], { color: 'gray', weight: 0.5 }).addTo(map);
+      if (!userMarker) {
+        userMarker = L.marker(currentLocation).addTo(map);
+      } else {
+        userMarker.setLatLng(currentLocation);
       }
 
-      for (let lng = Math.floor(bounds.getWest() / intervalEW) * intervalEW; lng <= bounds.getEast(); lng += intervalEW) {
-        L.polyline([[bounds.getSouth(), lng], [bounds.getNorth(), lng]], { color: 'gray', weight: 0.5 }).addTo(map);
+      if (!accuracyCircle) {
+        accuracyCircle = L.circle(currentLocation, {
+          radius: currentLocation.accuracy,
+          color: "blue",
+          fillColor: "#30f",
+          fillOpacity: 0.2
+        }).addTo(map);
+      } else {
+        accuracyCircle.setLatLng(currentLocation);
+        accuracyCircle.setRadius(currentLocation.accuracy);
       }
+
+      map.setView(currentLocation, map.getZoom());
     }
 
-    let gridDrawTimeout;
-    map.on('moveend zoomend', () => {
-      clearTimeout(gridDrawTimeout);
-      gridDrawTimeout = setTimeout(drawGrid, 300);
-    });
+    function handleGeolocationError(error) {
+      console.error("Geolocation error:", error.message);
+    }
 
-    let locationRequested = false;
-
-    function askLocation() {
-      if (locationRequested) return;
-      locationRequested = true;
-
+    function startTracking() {
       if (navigator.geolocation) {
-        document.getElementById("loading").style.display = "block";
+        if (watchId !== null) {
+          navigator.geolocation.clearWatch(watchId);
+        }
 
-        navigator.geolocation.getCurrentPosition(
-          pos => {
-            document.getElementById("loading").style.display = "none";
-
-            const lat = pos.coords.latitude;
-            const lon = pos.coords.longitude;
-
-            if (lat && lon) {
-              map.setView([lat, lon], 18); // Adjusted zoom for smoother load
-            } else {
-              alert("Invalid GPS data.");
-              locationRequested = false;
-            }
-          },
-          err => {
-            document.getElementById("loading").style.display = "none";
-            alert("Geolocation error: " + err.message);
-            locationRequested = false;
-          },
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        watchId = navigator.geolocation.watchPosition(
+          updateLocation,
+          handleGeolocationError,
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+          }
         );
       } else {
-        alert("Geolocation not supported.");
-        locationRequested = false;
+        alert("Geolocation is not supported by this browser.");
       }
     }
 
-    // Automatically ask for location once
-    askLocation();
+    function stopTracking() {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+    }
+
+    // ---------- Hartmann Grid Drawing (grid.js) ----------
+    const gridGroup = L.layerGroup().addTo(map);
+    const gridSpacingNS = 2;    // meters north-south
+    const gridSpacingEW = 2.5;  // meters east-west
+
+    function drawHartmannGrid() {
+      const bounds = map.getBounds();
+      const zoom = map.getZoom();
+      const interval = 2 ** (20 - zoom);
+
+      gridGroup.clearLayers();
+
+      const startLat = bounds.getSouth();
+      const endLat = bounds.getNorth();
+      const startLng = bounds.getWest();
+      const endLng = bounds.getEast();
+
+      for (let lat = startLat; lat <= endLat; lat += metersToDegreesLat(gridSpacingNS)) {
+        const latLine = L.polyline([[lat, startLng], [lat, endLng]], {
+          color: "gray",
+          weight: 1,
+          opacity: 0.5
+        });
+        gridGroup.addLayer(latLine);
+      }
+
+      for (let lng = startLng; lng <= endLng; lng += metersToDegreesLng(gridSpacingEW, (startLat + endLat) / 2)) {
+        const lngLine = L.polyline([[startLat, lng], [endLat, lng]], {
+          color: "gray",
+          weight: 1,
+          opacity: 0.5
+        });
+        gridGroup.addLayer(lngLine);
+      }
+    }
+
+    function metersToDegreesLat(meters) {
+      return meters / 111320;
+    }
+
+    function metersToDegreesLng(meters, latitude) {
+      return meters / (40075000 * Math.cos(latitude * Math.PI / 180) / 360);
+    }
+
+    map.on("moveend zoomend", drawHartmannGrid);
+    drawHartmannGrid();
+
+    // Start GPS tracking
+    startTracking();
   </script>
 </body>
 </html>

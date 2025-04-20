@@ -125,7 +125,7 @@
 
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-<script>
+<script type="module">
 const map = L.map('map', {
   center: [36.709639, 3.164972],
   zoom: 19,
@@ -199,7 +199,7 @@ import { getLocation } from './geolocation.js';
         loadingMessage.remove(); // Remove loading message
       }
     );
-
+  }
 
 const drawControl = new L.Control.Draw({
   draw: {

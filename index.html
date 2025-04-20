@@ -162,7 +162,7 @@ function drawGrid() {
   const lonMax = bounds.getEast();
 
   gridLayer.clearLayers();
-  if (map.getZoom() < 15) return;
+  if (map.getZoom() < 20) return;
 
   let startLat = refLat;
   while (startLat > latMin) startLat -= spacingLat;
@@ -185,7 +185,7 @@ function askLocation() {
       const userLatLng = [pos.coords.latitude, pos.coords.longitude];
       
       // Set the map view to the user's position
-      map.setView(userLatLng, 10);
+      map.setView(userLatLng, 18);
 
       // Add a marker at the user's position
       L.marker(userLatLng).addTo(map)

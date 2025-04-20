@@ -162,7 +162,7 @@ function drawGrid() {
   const lonMax = bounds.getEast();
 
   gridLayer.clearLayers();
-  if (map.getZoom() < 20) return;
+  if (map.getZoom() < 18) return;
 
   let startLat = refLat;
   while (startLat > latMin) startLat -= spacingLat;
@@ -170,10 +170,10 @@ function drawGrid() {
   while (startLon > lonMin) startLon -= spacingLon;
 
   for (let lat = startLat; lat <= latMax; lat += spacingLat) {
-    gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
+    gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.3}));
   }
   for (let lon = startLon; lon <= lonMax; lon += spacingLon) {
-    gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
+    gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.3}));
   }
 }
 map.on('moveend zoomend', drawGrid);
@@ -182,8 +182,8 @@ drawGrid();
 function askLocation() {
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(pos => {
-      map.setView([pos.coords.latitude, pos.coords.longitude], 20);
-    }, err => alert("Geolocation error: " + err.message), {enableHighAccuracy: true});
+      map.setView([pos.coords.latitude, pos.coords.longitude], 17);
+    }, err => alert("Geolocation error: " + err.message), {enableHighAccuracy: false});
   }
 }
 

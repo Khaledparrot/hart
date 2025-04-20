@@ -181,46 +181,94 @@ drawGrid();
 
 
 let currentMarker;
+let locationFetched = false;
 
 function askLocation() {
-    if (!navigator.geolocation) {
-        alert("Geolocation is not supported by your browser.");
-        return;
+    if (locationFetched) {
+        return; // If the location has already been fetched, do nothing
     }
 
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-
-            // Move to new position without changing zoom
-            map.panTo([lat, lng]);
-
-            // Place a marker at the position
-            if (currentMarker) {
-                map.removeLayer(currentMarker);
+    // Check if geolocation permission is granted
+    if (navigator.permissions) {
+        navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+            if (result.state === 'granted') {
+                getLocation();
+            } else if (result.state === 'prompt') {
+                // Request location if permission is not granted yet
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        getLocation(position);
+                    },
+                    (error) => {
+                        alert("Error getting position: " + error.message);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        maximumAge: 10000,
+                        timeout: 5000
+                    }
+                );
+            } else {
+                alert("Permission denied to access location.");
             }
-
-            currentMarker = L.circleMarker([lat, lng], {
-                radius: 6,
-                fillColor: "blue",
-                color: "white",
-                weight: 2,
-                opacity: 1,
-                fillOpacity: 0.9
-            }).addTo(map);
-
-        },
-        (error) => {
-            console.log("Error getting position:", error.message);
-        },
-        {
-            enableHighAccuracy: false,  // Use faster options
-            maximumAge: 10000,          // Use cached location if it's fresh
-            timeout: 5000               // Fail quickly if it can't get a fix
-        }
-    );
+        });
+    } else {
+        // For browsers that don't support permissions API
+        getLocation();
+    }
 }
+
+function getLocation(position) {
+    if (locationFetched) {
+        return; // If the location has already been fetched, do nothing
+    }
+
+    if (!position) {
+        // If no position provided, request location
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                moveToPosition(lat, lng);
+            },
+            (error) => {
+                alert("Error getting position: " + error.message);
+            },
+            {
+                enableHighAccuracy: true,
+                maximumAge: 10000,
+                timeout: 5000
+            }
+        );
+    } else {
+        // If we already have the position, just use it
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        moveToPosition(lat, lng);
+    }
+}
+
+function moveToPosition(lat, lng) {
+    // Move to the new position without changing zoom
+    map.panTo([lat, lng]);
+
+    // Place a marker at the position
+    if (currentMarker) {
+        map.removeLayer(currentMarker); // Remove old marker if exists
+    }
+
+    currentMarker = L.circleMarker([lat, lng], {
+        radius: 6,
+        fillColor: "blue",
+        color: "white",
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.9
+    }).addTo(map);
+
+    locationFetched = true; // Mark that location has been fetched
+}
+
 const drawControl = new L.Control.Draw({
   draw: {
     polygon: { allowIntersection: false, showArea: true },

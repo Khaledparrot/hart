@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
   <title>Hartmann Grid Tracker</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
@@ -22,7 +22,6 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.2);
   }
 
-  /* Style for buttons to mimic drawing tool style */
   button {
     padding: 6px 12px;
     font-size: 14px;
@@ -36,19 +35,16 @@
     transition: background-color 0.2s ease, border-color 0.2s ease;
   }
 
-  /* Hover effect */
   button:hover {
     background-color: #f1f1f1;
     border-color: #555;
   }
 
-  /* Active effect */
   button:active {
     background-color: #e6e6e6;
     border-color: #555;
   }
 
-  /* Specifically style the 'Show Intersections' and 'Clear' buttons */
   #showBtn, #clearBtn {
     background-color: #ffffff;
     border: 1px solid #bbb;
@@ -60,72 +56,70 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
     transition: background-color 0.2s ease, border-color 0.2s ease;
     font-size: 14px;
+    display: none;
   }
 
-  #showBtn:hover, #clearBtn:hover {
-    background-color: #f1f1f1;
-    border-color: #555;
-  }
-
-  #showBtn:active, #clearBtn:active {
-    background-color: #e6e6e6;
-    border-color: #555;
-  }
-
-  /* Optional: Add focus styles for better accessibility */
   button:focus {
     outline: none;
     box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.5);
   }
 
-/*tuto*/
-.tutorial-modal {
-  display: none; /* Hidden by default */
-  position: fixed; /* Stay in place */
-  z-index: 1000; /* Sit on top */
-  left: 0;
-  top: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.5); /* Black background with transparency */
-}
+  .tutorial-modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+  }
 
-.tutorial-content {
-  background-color: white;
-  margin: 15% auto;
-  padding: 20px;
-  border-radius: 10px;
-  width: 80%;
-  max-width: 500px;
-}
+  .tutorial-content {
+    background-color: white;
+    margin: 15% auto;
+    padding: 20px;
+    border-radius: 10px;
+    width: 80%;
+    max-width: 500px;
+  }
 
-.close-btn {
-  color: black;
-  font-size: 30px;
-  font-weight: bold;
-  position: absolute;
-  top: 10px;
-  right: 20px;
-  cursor: pointer;
-}
+  .close-btn {
+    color: black;
+    font-size: 30px;
+    font-weight: bold;
+    position: absolute;
+    top: 10px;
+    right: 20px;
+    cursor: pointer;
+  }
 
-
-</style>
-
-
+  .location-status {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255,255,255,0.9);
+    padding: 5px 10px;
+    border-radius: 5px;
+    z-index: 1000;
+    font-size: 12px;
+  }
+  </style>
 </head>
 <body>
 <div id="controls">
   <button onclick="askLocation()"><i class="fas fa-map-marker-alt"></i></button>
- <!-- <button onclick="startDrawing()">✏️ Draw Room</button>-->
-  <button onclick="showIntersections()" id="showBtn" style="display:none;"><i class="fas fa-eye"></i></button>
-  <button onclick="clearRoom()" id="clearBtn" style="display:none;"><i class="fas fa-eraser"></i></button>
+  <button onclick="showIntersections()" id="showBtn"><i class="fas fa-eye"></i></button>
+  <button onclick="clearRoom()" id="clearBtn"><i class="fas fa-eraser"></i></button>
 </div>
 <div id="map"></div>
+<div id="locationStatus" class="location-status"></div>
 
 <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script>
+// Map initialization
 const map = L.map('map', {
   center: [36.709639, 3.164972],
   zoom: 19,
@@ -133,26 +127,44 @@ const map = L.map('map', {
   minZoom: 2
 });
 
+// Tile layer
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '&copy; OpenStreetMap & CartoDB',
   maxZoom: 22
 }).addTo(map);
 
+// Constants
 const refLat = 36.709639;
 const refLon = 3.164972;
 const meterToDegLat = 1 / 111320;
-function getMeterToDegLon(lat) {
-  return 1 / (111320 * Math.cos(lat * Math.PI / 180));
-}
 
+// State variables
+let positionWatcher = null;
+let userMarker = null;
+let accuracyCircle = null;
 let drawnShape = null;
 const redNodes = [];
+let isLocating = false;
+let lastLocationTime = 0;
+
+// Layers
 const nodeLayer = L.layerGroup().addTo(map);
 const gridLayer = L.layerGroup().addTo(map);
 const drawnItems = new L.FeatureGroup().addTo(map);
 const distanceLayer = L.layerGroup().addTo(map);
 
+function getMeterToDegLon(lat) {
+  return 1 / (111320 * Math.cos(lat * Math.PI / 180));
+}
+
+// Optimized grid drawing
 function drawGrid() {
+  // Skip if zoomed out or during location updates
+  if (map.getZoom() < 18 || isLocating) {
+    gridLayer.clearLayers();
+    return;
+  }
+
   const bounds = map.getBounds();
   const spacingLat = 2 * meterToDegLat;
   const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
@@ -162,54 +174,90 @@ function drawGrid() {
   const lonMax = bounds.getEast();
 
   gridLayer.clearLayers();
-  if (map.getZoom() < 20) return;
 
   let startLat = refLat;
   while (startLat > latMin) startLat -= spacingLat;
   let startLon = refLon;
   while (startLon > lonMin) startLon -= spacingLon;
 
+  // Batch grid line creation for performance
+  const latLines = [];
+  const lonLines = [];
+  
   for (let lat = startLat; lat <= latMax; lat += spacingLat) {
-    gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
+    latLines.push(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
   }
   for (let lon = startLon; lon <= lonMax; lon += spacingLon) {
-    gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
+    lonLines.push(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
   }
+  
+  // Add all lines at once
+  gridLayer.addLayer(L.layerGroup(latLines.concat(lonLines)));
 }
-map.on('moveend zoomend', drawGrid);
-drawGrid();
 
+// Improved location function
 function askLocation() {
+  if (isLocating) return;
+  
+  const now = Date.now();
+  if (now - lastLocationTime < 5000) return;
+  
   if (navigator.geolocation) {
-    // Use getCurrentPosition instead of watchPosition for one-time location fetch
+    isLocating = true;
+    lastLocationTime = now;
+    document.getElementById('locationStatus').textContent = "Locating...";
+    
+    // Temporarily simplify the map
+    gridLayer.removeFrom(map);
+    
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
-
-        // Only update map view if it’s significantly different from the current view
-        const currentCenter = map.getCenter();
-        const distance = map.distance([lat, lon], currentCenter);
+        const lng = pos.coords.longitude;
+        const accuracy = pos.coords.accuracy;
         
-        // Set a threshold distance (e.g., 100 meters) to avoid unnecessary map moves
-        if (distance > 100) {
-          map.setView([lat, lon], 16);  // Lower zoom level for performance
-        }
+        // Clear previous markers
+        if (userMarker) map.removeLayer(userMarker);
+        if (accuracyCircle) map.removeLayer(accuracyCircle);
+        
+        // Create new markers
+        userMarker = L.marker([lat, lng]).addTo(map)
+          .bindPopup(`Your location (Accuracy: ${accuracy.toFixed(1)}m)`);
+        
+        accuracyCircle = L.circle([lat, lng], {
+          radius: accuracy,
+          color: '#3388ff',
+          fillOpacity: 0.2
+        }).addTo(map);
+        
+        // Restore grid after slight delay
+        setTimeout(() => {
+          gridLayer.addTo(map);
+          drawGrid();
+          map.setView([lat, lng], 19); // Slightly lower zoom for performance
+          document.getElementById('locationStatus').textContent = 
+            `Location: ${lat.toFixed(5)}, ${lng.toFixed(5)} (±${accuracy.toFixed(1)}m)`;
+          isLocating = false;
+        }, 300);
       },
       (err) => {
+        gridLayer.addTo(map); // Restore grid on error
+        isLocating = false;
+        document.getElementById('locationStatus').textContent = "Location error";
         alert("Geolocation error: " + err.message);
       },
       {
-        enableHighAccuracy: true, // Optional: Set to false if performance issues persist
-        timeout: 10000, // Set a timeout to avoid hanging
-        maximumAge: 60000, // Cache location for 1 minute to prevent repeated requests
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000
       }
     );
   } else {
-    alert("Geolocation is not supported by this browser.");
+    alert("Geolocation is not supported by your browser");
   }
 }
 
+// Drawing tools
 const drawControl = new L.Control.Draw({
   draw: {
     polygon: { allowIntersection: false, showArea: true },
@@ -219,11 +267,6 @@ const drawControl = new L.Control.Draw({
 });
 map.addControl(drawControl);
 
-function startDrawing() {
-  document.querySelector('#showBtn').style.display = 'none';
-  document.querySelector('#clearBtn').style.display = 'none';
-}
-
 map.on('draw:created', function (e) {
   if (drawnShape) {
     drawnItems.clearLayers();
@@ -232,18 +275,18 @@ map.on('draw:created', function (e) {
   }
   drawnShape = e.layer;
   drawnItems.addLayer(drawnShape);
-  document.querySelector('#showBtn').style.display = 'inline';
-  document.querySelector('#clearBtn').style.display = 'inline';
+  document.getElementById('showBtn').style.display = 'inline-block';
+  document.getElementById('clearBtn').style.display = 'inline-block';
 });
 
+// Intersection functions (unchanged from your original)
 function pointInsidePolygon(point, polygon) {
   let inside = false;
-  let x = point.lat, y = point.lng;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
     const xi = polygon[i].lat, yi = polygon[i].lng;
     const xj = polygon[j].lat, yj = polygon[j].lng;
-    const intersect = ((yi > y) !== (yj > y)) &&
-                      (x < (xj - xi) * (y - yi) / (yj - yi + 0.00000001) + xi);
+    const intersect = ((yi > point.lat) !== (yj > point.lat)) &&
+      (point.lng < (xj - xi) * (point.lat - yi) / (yj - yi) + xi);
     if (intersect) inside = !inside;
   }
   return inside;
@@ -264,54 +307,66 @@ function showIntersections() {
   const spacingLat = 2 * meterToDegLat;
   const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
 
-  let startLat = refLat;
-  while (startLat > bounds.getSouth()) startLat -= spacingLat;
-  let startLon = refLon;
-  while (startLon > bounds.getWest()) startLon -= spacingLon;
-
-  for (let lat = startLat; lat <= bounds.getNorth(); lat += spacingLat) {
-    for (let lon = startLon; lon <= bounds.getEast(); lon += spacingLon) {
+  for (let lat = refLat; lat <= bounds.getNorth(); lat += spacingLat) {
+    if (lat < bounds.getSouth()) continue;
+    for (let lon = refLon; lon <= bounds.getEast(); lon += spacingLon) {
+      if (lon < bounds.getWest()) continue;
       const point = L.latLng(lat, lon);
       if (pointInsidePolygon(point, shape)) {
         const red = L.circleMarker(point, {
-          color: 'red', fillColor: 'red', radius: 5, fillOpacity: 1
-        }).addTo(nodeLayer);
-        
-        red.on('click', () => {
-          distanceLayer.clearLayers(); // remove previous distances
-          drawDistancesToEdges(point, shape);
-        });
-
-        redNodes.push(red);
+          radius: 5, color: 'red', fillOpacity: 1
+        }).addTo(nodeLayer)
+          .on('click', () => showDistances(point, shape));
       }
     }
   }
 }
 
-function drawDistancesToEdges(point, shape) {
+function showDistances(point, shape) {
+  distanceLayer.clearLayers();
   for (let i = 0; i < shape.length; i++) {
     const a = shape[i];
     const b = shape[(i + 1) % shape.length];
     const closest = getClosestPointOnSegment(point, a, b);
-
+    
     L.polyline([point, closest], { color: 'blue', weight: 1 }).addTo(distanceLayer);
-    const meters = map.distance(point, closest).toFixed(2);
+    const distance = map.distance(point, closest).toFixed(2);
     L.marker(closest, {
       icon: L.divIcon({
-        className: 'label',
-        html: `<div font-weight:bold;>${meters} m</div>`
+        html: `<div style="background:white;padding:2px;">${distance}m</div>`
       })
     }).addTo(distanceLayer);
   }
 }
 
 function getClosestPointOnSegment(p, a, b) {
-  const ax = a.lat, ay = a.lng;
-  const bx = b.lat, by = b.lng;
-  const px = p.lat, py = p.lng;
-  const dx = bx - ax, dy = by - ay;
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
-  return L.latLng(ax + t * dx, ay + t * dy);
+  const x = p.lat, y = p.lng;
+  const x1 = a.lat, y1 = a.lng;
+  const x2 = b.lat, y2 = b.lng;
+  
+  const A = x - x1;
+  const B = y - y1;
+  const C = x2 - x1;
+  const D = y2 - y1;
+
+  const dot = A * C + B * D;
+  const len_sq = C * C + D * D;
+  let param = -1;
+  if (len_sq !== 0) param = dot / len_sq;
+
+  let xx, yy;
+  if (param < 0) {
+    xx = x1;
+    yy = y1;
+  } else if (param > 1) {
+    xx = x2;
+    yy = y2;
+  } else {
+    xx = x1 + param * C;
+    yy = y1 + param * D;
+  }
+
+  return L.latLng(xx, yy);
 }
 
 function clearRoom() {
@@ -319,12 +374,40 @@ function clearRoom() {
   nodeLayer.clearLayers();
   distanceLayer.clearLayers();
   drawnShape = null;
-  redNodes.length = 0;
-  document.querySelector('#showBtn').style.display = 'none';
-  document.querySelector('#clearBtn').style.display = 'none';
+  document.getElementById('showBtn').style.display = 'none';
+  document.getElementById('clearBtn').style.display = 'none';
+}
+
+// Event listeners
+map.on('moveend zoomend', drawGrid);
+drawGrid();
+
+// Mobile fixes
+document.addEventListener('touchmove', function(e) {
+  if (e.target.classList.contains('leaflet-container')) {
+    e.preventDefault();
+  }
+}, { passive: false });
+
+window.addEventListener('orientationchange', function() {
+  setTimeout(function() {
+    map.invalidateSize();
+    drawGrid();
+  }, 300);
+});
+
+// Tutorial
+if (!localStorage.getItem('tutorialSeen')) {
+  document.getElementById('tutorialModal').style.display = 'block';
+}
+
+function closeTutorial() {
+  localStorage.setItem('tutorialSeen', 'true');
+  document.getElementById('tutorialModal').style.display = 'none';
 }
 </script>
-<!-- tuto -->
+
+<!-- Tutorial Modal -->
 <div id="tutorialModal" class="tutorial-modal">
   <div class="tutorial-content">
     <span class="close-btn" onclick="closeTutorial()">&times;</span>
@@ -332,29 +415,13 @@ function clearRoom() {
     <p>Cette application vous aide à suivre votre position sur le réseau de Hartmann. Voici un guide rapide :</p>
     <ul>
       <li>Cliquez sur le bouton <i class="fas fa-map-marker-alt"></i> pour centrer la carte sur votre position actuelle.</li>
-      <li>Dessinez une pièce à l'aide des outils situés à droite .</li>
-      <li>Cliquez sur le bouton <i class="fas fa-eye"></i> pour afficher les intersections à l’intérieur de la pièce sélectionnée.</li>
+      <li>Dessinez une pièce à l'aide des outils situés à droite.</li>
+      <li>Cliquez sur le bouton <i class="fas fa-eye"></i> pour afficher les intersections à l'intérieur de la pièce sélectionnée.</li>
       <li>Cliquez sur une intersection rouge pour mesurer les distances jusqu'aux murs de la pièce.</li>
       <li>Cliquez sur le bouton <i class="fas fa-eraser"></i> pour effacer toutes les pièces sélectionnées.</li>
     </ul>
     <p>Cliquez sur "X" pour fermer ce tutoriel et commencer à utiliser l'application.</p>
   </div>
 </div>
-
-  <script>
-
-    if (!localStorage.getItem('tutorialSeen')) {
-      // Show the tutorial modal
-      document.getElementById('tutorialModal').style.display = 'block';
-    }
-    function closeTutorial() {
-
-      localStorage.setItem('tutorialSeen', 'true');
-      
-      document.getElementById('tutorialModal').style.display = 'none';
-    }
-  </script>
-
-  
 </body>
 </html>

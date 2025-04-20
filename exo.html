@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Real-Time GPS Tracker</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').fitWorld();
+
+    // Add OpenStreetMap tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let marker, accuracyCircle;
+
+    function onLocationFound(e) {
+      const radius = e.accuracy;
+
+      if (marker) {
+        marker.setLatLng(e.latlng);
+        accuracyCircle.setLatLng(e.latlng).setRadius(radius);
+      } else {
+        marker = L.marker(e.latlng).addTo(map)
+          .bindPopup("You are here").openPopup();
+        accuracyCircle = L.circle(e.latlng, radius).addTo(map);
+      }
+
+      map.setView(e.latlng, 18);
+    }
+
+    function onLocationError(e) {
+      alert("Geolocation error: " + e.message);
+    }
+
+    map.locate({
+      watch: true,
+      setView: false,
+      enableHighAccuracy: true
+    });
+
+    map.on('locationfound', onLocationFound);
+    map.on('locationerror', onLocationError);
+  </script>
+</body>
+</html>

@@ -5,15 +5,12 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- Leaflet & Draw CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
-
   <style>
     html, body, #map {
       height: 100%;
       margin: 0;
-      padding: 0;
     }
     .button-container {
       position: absolute;
@@ -23,69 +20,63 @@
     }
     .distance-label {
       font-size: 12px;
-      background-color: white;
+      background: white;
       padding: 2px 4px;
-      border: 1px solid #aaa;
-      border-radius: 4px;
+      border-radius: 3px;
+      border: 1px solid #ccc;
     }
   </style>
 </head>
 <body>
-
   <div id="map"></div>
   <div class="button-container">
     <button onclick="askLocation()">📍 Locate Me</button>
   </div>
 
-  <!-- Leaflet & Draw JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
   <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
 
   <script>
-    const map = L.map("map").setView([0, 0], 2);
-
+    const map = L.map("map").setView([0, 0], 17);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 22,
-      attribution: "&copy; OpenStreetMap contributors"
+      maxZoom: 22
     }).addTo(map);
 
     const drawnItems = new L.FeatureGroup().addTo(map);
     map.addControl(new L.Control.Draw({
-      draw: {
-        polygon: true,
-        polyline: false,
-        rectangle: false,
-        circle: false,
-        marker: false,
-        circlemarker: false
-      },
+      draw: { polygon: true, rectangle: false, circle: false, marker: false },
       edit: { featureGroup: drawnItems }
     }));
 
-    let redPoints = [];
+    let redPoints = [], gridLayer = L.layerGroup().addTo(map);
 
-    function drawGlobalGrid() {
-      const stepLat = 2 / 111111; // 2m north-south in degrees
-      const stepLng = 2.5 / 111111; // 2.5m east-west in degrees
-      const gridLayer = L.layerGroup();
+    function drawVisibleGrid() {
+      gridLayer.clearLayers();
 
-      for (let lat = -90; lat <= 90; lat += stepLat) {
-        for (let lng = -180; lng <= 180; lng += stepLng) {
-          const point = L.circleMarker([lat, lng], {
-            radius: 1.5,
+      const bounds = map.getBounds();
+      const stepLat = 2 / 111111;
+      const stepLng = 2.5 / 111111;
+
+      const minLat = Math.floor(bounds.getSouth() / stepLat) * stepLat;
+      const maxLat = Math.ceil(bounds.getNorth() / stepLat) * stepLat;
+      const minLng = Math.floor(bounds.getWest() / stepLng) * stepLng;
+      const maxLng = Math.ceil(bounds.getEast() / stepLng) * stepLng;
+
+      for (let lat = minLat; lat <= maxLat; lat += stepLat) {
+        for (let lng = minLng; lng <= maxLng; lng += stepLng) {
+          const pt = L.circleMarker([lat, lng], {
+            radius: 1,
             color: "gray",
             fillOpacity: 1
           }).addTo(gridLayer);
-          point._grid = true;
+          pt._grid = true;
         }
       }
-
-      gridLayer.addTo(map);
-      return gridLayer;
     }
 
-    const gridLayer = drawGlobalGrid();
+    map.on("moveend", drawVisibleGrid);
+    drawVisibleGrid();
 
     function pointInsidePolygon(latlng, polygonGeoJSON) {
       const pt = turf.point([latlng.lng, latlng.lat]);
@@ -114,32 +105,29 @@
         const label = L.marker(snappedLatLng, {
           icon: L.divIcon({
             className: "distance-label",
-            html: `${distance.toFixed(2)} m`,
-            iconSize: [60, 20],
-            iconAnchor: [30, -5]
+            html: `${distance.toFixed(2)} m`
           })
         }).addTo(map);
 
         setTimeout(() => {
           map.removeLayer(lineToEdge);
           map.removeLayer(label);
-        }, 10000); // auto-remove after 10s
+        }, 10000);
       });
     }
 
-    map.on(L.Draw.Event.CREATED, function (event) {
-      const layer = event.layer;
+    map.on(L.Draw.Event.CREATED, function (e) {
+      const layer = e.layer;
       drawnItems.clearLayers();
       drawnItems.addLayer(layer);
 
       const polygonGeoJSON = layer.toGeoJSON().geometry;
-
-      redPoints.forEach(pt => map.removeLayer(pt));
+      redPoints.forEach(p => map.removeLayer(p));
       redPoints = [];
 
-      gridLayer.eachLayer(point => {
-        if (!point._grid) return;
-        const latlng = point.getLatLng();
+      gridLayer.eachLayer(pt => {
+        if (!pt._grid) return;
+        const latlng = pt.getLatLng();
         if (pointInsidePolygon(latlng, polygonGeoJSON)) {
           const red = L.circleMarker(latlng, {
             radius: 4,
@@ -158,48 +146,37 @@
     });
 
     let locationMarker = null;
-    let locationWatchId = null;
 
     function askLocation() {
       if (!navigator.geolocation) {
-        alert("Geolocation not supported by this browser.");
+        alert("Geolocation not supported.");
         return;
       }
 
-      const loadingPopup = L.popup()
-        .setLatLng(map.getCenter())
-        .setContent("Locating...")
-        .openOn(map);
+      const popup = L.popup().setLatLng(map.getCenter()).setContent("Locating...").openOn(map);
 
-      locationWatchId = navigator.geolocation.watchPosition(
-        pos => {
-          map.closePopup();
-          const coords = [pos.coords.latitude, pos.coords.longitude];
-
-          if (!locationMarker) {
-            locationMarker = L.circleMarker(coords, {
-              radius: 6,
-              color: "blue",
-              fillColor: "#00f",
-              fillOpacity: 0.8
-            }).addTo(map);
-          } else {
-            locationMarker.setLatLng(coords);
-          }
-
-          map.setView(coords, 20);
-          navigator.geolocation.clearWatch(locationWatchId);
-        },
-        err => {
-          map.closePopup();
-          alert("Location error: " + err.message);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0
+      navigator.geolocation.getCurrentPosition(pos => {
+        map.closePopup();
+        const latlng = [pos.coords.latitude, pos.coords.longitude];
+        if (!locationMarker) {
+          locationMarker = L.circleMarker(latlng, {
+            radius: 6,
+            color: "blue",
+            fillColor: "#00f",
+            fillOpacity: 0.8
+          }).addTo(map);
+        } else {
+          locationMarker.setLatLng(latlng);
         }
-      );
+        map.setView(latlng, 19);
+      }, err => {
+        map.closePopup();
+        alert("Location error: " + err.message);
+      }, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      });
     }
   </script>
 </body>

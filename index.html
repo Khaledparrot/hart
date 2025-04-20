@@ -182,30 +182,44 @@ drawGrid();
 let watchId = null;
 
 function askLocation() {
-  if (navigator.geolocation) {
-    if (watchId !== null) {
-      navigator.geolocation.clearWatch(watchId);
+    if (!navigator.geolocation) {
+        alert("Geolocation is not supported by your browser.");
+        return;
     }
 
-    watchId = navigator.geolocation.watchPosition(pos => {
-      const { latitude, longitude, accuracy } = pos.coords;
+    navigator.geolocation.getCurrentPosition(
+        (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
 
-      // Optional: Only set the view once if accuracy is good
-      if (accuracy < 20) {
-        map.setView([latitude, longitude], 20);
-        navigator.geolocation.clearWatch(watchId); // stop watching after getting a good fix
-        watchId = null;
-      }
-    }, err => {
-      alert("Geolocation error: " + err.message);
-    }, {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 10000 // set a timeout to avoid hanging
-    });
-  }
+            // Show a marker for the user’s position
+            const userMarker = L.circleMarker([lat, lng], {
+                radius: 8,
+                fillColor: "blue",
+                color: "white",
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.8
+            }).addTo(map);
+
+            // Optional: add a circle showing accuracy range
+            L.circle([lat, lng], {
+                radius: accuracy,
+                color: 'blue',
+                fillOpacity: 0.1
+            }).addTo(map);
+        },
+        (error) => {
+            alert("Unable to retrieve your location: " + error.message);
+        },
+        {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+        }
+    );
 }
-
 const drawControl = new L.Control.Draw({
   draw: {
     polygon: { allowIntersection: false, showArea: true },

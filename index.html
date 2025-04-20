@@ -179,13 +179,44 @@ function drawGrid() {
 map.on('moveend zoomend', drawGrid);
 drawGrid();
 
-function askLocation() {
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(pos => {
-      map.setView([pos.coords.latitude, pos.coords.longitude], 17);
-    }, err => alert("Geolocation error: " + err.message), {enableHighAccuracy: false});
-  }
-}
+let userMarker = L.marker([0, 0]).addTo(map).bindPopup("📍 Your location");
+    let userCircle = null;
+
+    function askLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (position) => {
+            const lat = position.coords.latitude;
+            const lon = position.coords.longitude;
+
+            userMarker.setLatLng([lat, lon]);
+            userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
+            userMarker.openPopup();
+
+            if (userCircle) map.removeLayer(userCircle);
+            userCircle = L.circle([lat, lon], {
+              radius: position.coords.accuracy,
+              color: '#3388ff',
+              fillColor: '#3388ff',
+              fillOpacity: 0.2
+            }).addTo(map);
+
+            // Center only once or on request (not continuously)
+            // map.setView([lat, lon], map.getZoom());
+          },
+          (err) => {
+            alert("Error getting location: " + err.message);
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 5000,
+            timeout: 10000
+          }
+        );
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
+    }
 
 const drawControl = new L.Control.Draw({
   draw: {

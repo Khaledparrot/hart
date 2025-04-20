@@ -162,7 +162,7 @@ function drawGrid() {
   const lonMax = bounds.getEast();
 
   gridLayer.clearLayers();
-  if (map.getZoom() < 18) return;
+  if (map.getZoom() < 17) return;
 
   let startLat = refLat;
   while (startLat > latMin) startLat -= spacingLat;
@@ -176,8 +176,18 @@ function drawGrid() {
     gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.3}));
   }
 }
-map.on('moveend zoomend', drawGrid);
-drawGrid();
+//map.on('moveend zoomend', drawGrid);
+//drawGrid();
+
+      // Throttle redraw
+    let gridTimeout;
+    function scheduleGridRedraw() {
+      if (gridTimeout) clearTimeout(gridTimeout);
+      gridTimeout = setTimeout(drawGrid, 300); // wait 300ms after move/zoom
+    }
+
+    map.on('moveend zoomend', scheduleGridRedraw);
+    scheduleGridRedraw();
 
 let userMarker = L.marker([0, 0]).addTo(map).bindPopup("📍 Your location");
     let userCircle = null;

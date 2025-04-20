@@ -203,22 +203,16 @@ let userMarker = L.marker([0, 0]).addTo(map).bindPopup("📍 Your location");
             userMarker.setPopupContent(`📍 You: ${lat.toFixed(5)}, ${lon.toFixed(5)}`);
             userMarker.openPopup();
 
-            if (userCircle) map.removeLayer(userCircle);
-            userCircle = L.circle([lat, lon], {
-              radius: position.coords.accuracy,
-              color: '#3388ff',
-              fillColor: '#3388ff',
-              fillOpacity: 0.2
-            }).addTo(map);
+
 
             // Center only once or on request (not continuously)
-            // map.setView([lat, lon], map.getZoom());
+             map.setView([lat, lon], map.getZoom());
           },
           (err) => {
             alert("Error getting location: " + err.message);
           },
           {
-            enableHighAccuracy: true,
+            enableHighAccuracy: false,
             maximumAge: 5000,
             timeout: 10000
           }

@@ -22,6 +22,7 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.2);
   }
 
+  /* Style for buttons to mimic drawing tool style */
   button {
     padding: 6px 12px;
     font-size: 14px;
@@ -35,16 +36,19 @@
     transition: background-color 0.2s ease, border-color 0.2s ease;
   }
 
+  /* Hover effect */
   button:hover {
     background-color: #f1f1f1;
     border-color: #555;
   }
 
+  /* Active effect */
   button:active {
     background-color: #e6e6e6;
     border-color: #555;
   }
 
+  /* Specifically style the 'Show Intersections' and 'Clear' buttons */
   #showBtn, #clearBtn {
     background-color: #ffffff;
     border: 1px solid #bbb;
@@ -68,45 +72,52 @@
     border-color: #555;
   }
 
+  /* Optional: Add focus styles for better accessibility */
   button:focus {
     outline: none;
     box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.5);
   }
 
-  .tutorial-modal {
-    display: none;
-    position: fixed;
-    z-index: 1000;
-    left: 0;
-    top: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-  }
+/*tuto*/
+.tutorial-modal {
+  display: none; /* Hidden by default */
+  position: fixed; /* Stay in place */
+  z-index: 1000; /* Sit on top */
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5); /* Black background with transparency */
+}
 
-  .tutorial-content {
-    background-color: white;
-    margin: 15% auto;
-    padding: 20px;
-    border-radius: 10px;
-    width: 80%;
-    max-width: 500px;
-  }
+.tutorial-content {
+  background-color: white;
+  margin: 15% auto;
+  padding: 20px;
+  border-radius: 10px;
+  width: 80%;
+  max-width: 500px;
+}
 
-  .close-btn {
-    color: black;
-    font-size: 30px;
-    font-weight: bold;
-    position: absolute;
-    top: 10px;
-    right: 20px;
-    cursor: pointer;
-  }
+.close-btn {
+  color: black;
+  font-size: 30px;
+  font-weight: bold;
+  position: absolute;
+  top: 10px;
+  right: 20px;
+  cursor: pointer;
+}
+
+
 </style>
+
+
 </head>
 <body>
 <div id="controls">
   <button onclick="askLocation()"><i class="fas fa-map-marker-alt"></i></button>
+ <!-- <button onclick="startDrawing()">✏️ Draw Room</button>-->
   <button onclick="showIntersections()" id="showBtn" style="display:none;"><i class="fas fa-eye"></i></button>
   <button onclick="clearRoom()" id="clearBtn" style="display:none;"><i class="fas fa-eraser"></i></button>
 </div>
@@ -165,43 +176,15 @@ function drawGrid() {
     gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
   }
 }
-
 map.on('moveend zoomend', drawGrid);
 drawGrid();
 
-let locationWatcher = null;
-
 function askLocation() {
-  if (!navigator.geolocation) {
-    alert("Geolocation not supported");
-    return;
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+      map.setView([pos.coords.latitude, pos.coords.longitude], 1);
+    }, err => alert("Geolocation error: " + err.message));
   }
-
-  if (locationWatcher !== null) {
-    navigator.geolocation.clearWatch(locationWatcher);
-    locationWatcher = null;
-    return;
-  }
-
-  locationWatcher = navigator.geolocation.watchPosition(position => {
-    const latlng = [position.coords.latitude, position.coords.longitude];
-    L.circleMarker(latlng, {
-      radius: 6,
-      fillColor: "blue",
-      color: "#fff",
-      weight: 2,
-      opacity: 1,
-      fillOpacity: 0.7
-    }).addTo(map);
-
-    map.panTo(latlng, { animate: true });
-  }, err => {
-    alert("Error getting location: " + err.message);
-  }, {
-    enableHighAccuracy: true,
-    maximumAge: 1000,
-    timeout: 10000
-  });
 }
 
 const drawControl = new L.Control.Draw({
@@ -244,30 +227,111 @@ function pointInsidePolygon(point, polygon) {
 }
 
 function showIntersections() {
-  if (!drawnShape) return;
-
-  const shapeCoords = drawnShape.getLatLngs()[0];
-  const gridNodes = [];
-
-  gridLayer.eachLayer(function(layer) {
-    const nodeLatLng = layer.getLatLng();
-    if (pointInsidePolygon(nodeLatLng, shapeCoords)) {
-      gridNodes.push(nodeLatLng);
-    }
-  });
+  if (!drawnShape || map.getZoom() < 19) {
+    alert("Zoomez davantage pour voir les intersections");
+    return;
+  }
 
   nodeLayer.clearLayers();
-  gridNodes.forEach(node => {
-    nodeLayer.addLayer(L.circleMarker(node, {
-      radius: 6,
-      fillColor: "red",
-      color: "#fff",
-      weight: 2,
-      opacity: 1,
-      fillOpacity: 0.7
-    }));
-  });
+  distanceLayer.clearLayers();
+  redNodes.length = 0;
+
+  const shape = drawnShape.getLatLngs()[0];
+  const bounds = drawnShape.getBounds();
+  const spacingLat = 2 * meterToDegLat;
+  const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
+
+  let startLat = refLat;
+  while (startLat > bounds.getSouth()) startLat -= spacingLat;
+  let startLon = refLon;
+  while (startLon > bounds.getWest()) startLon -= spacingLon;
+
+  for (let lat = startLat; lat <= bounds.getNorth(); lat += spacingLat) {
+    for (let lon = startLon; lon <= bounds.getEast(); lon += spacingLon) {
+      const point = L.latLng(lat, lon);
+      if (pointInsidePolygon(point, shape)) {
+        const red = L.circleMarker(point, {
+          color: 'red', fillColor: 'red', radius: 5, fillOpacity: 1
+        }).addTo(nodeLayer);
+        
+        red.on('click', () => {
+          distanceLayer.clearLayers(); // remove previous distances
+          drawDistancesToEdges(point, shape);
+        });
+
+        redNodes.push(red);
+      }
+    }
+  }
+}
+
+function drawDistancesToEdges(point, shape) {
+  for (let i = 0; i < shape.length; i++) {
+    const a = shape[i];
+    const b = shape[(i + 1) % shape.length];
+    const closest = getClosestPointOnSegment(point, a, b);
+
+    L.polyline([point, closest], { color: 'blue', weight: 1 }).addTo(distanceLayer);
+    const meters = map.distance(point, closest).toFixed(2);
+    L.marker(closest, {
+      icon: L.divIcon({
+        className: 'label',
+        html: `<div font-weight:bold;>${meters} m</div>`
+      })
+    }).addTo(distanceLayer);
+  }
+}
+
+function getClosestPointOnSegment(p, a, b) {
+  const ax = a.lat, ay = a.lng;
+  const bx = b.lat, by = b.lng;
+  const px = p.lat, py = p.lng;
+  const dx = bx - ax, dy = by - ay;
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+  return L.latLng(ax + t * dx, ay + t * dy);
+}
+
+function clearRoom() {
+  drawnItems.clearLayers();
+  nodeLayer.clearLayers();
+  distanceLayer.clearLayers();
+  drawnShape = null;
+  redNodes.length = 0;
+  document.querySelector('#showBtn').style.display = 'none';
+  document.querySelector('#clearBtn').style.display = 'none';
 }
 </script>
+<!-- tuto -->
+<div id="tutorialModal" class="tutorial-modal">
+  <div class="tutorial-content">
+    <span class="close-btn" onclick="closeTutorial()">&times;</span>
+    <h2>Bienvenue sur le Suivi du Réseau de Hartmann !</h2>
+    <p>Cette application vous aide à suivre votre position sur le réseau de Hartmann. Voici un guide rapide :</p>
+    <ul>
+      <li>Cliquez sur le bouton <i class="fas fa-map-marker-alt"></i> pour centrer la carte sur votre position actuelle.</li>
+      <li>Dessinez une pièce à l'aide des outils situés à droite .</li>
+      <li>Cliquez sur le bouton <i class="fas fa-eye"></i> pour afficher les intersections à l’intérieur de la pièce sélectionnée.</li>
+      <li>Cliquez sur une intersection rouge pour mesurer les distances jusqu'aux murs de la pièce.</li>
+      <li>Cliquez sur le bouton <i class="fas fa-eraser"></i> pour effacer toutes les pièces sélectionnées.</li>
+    </ul>
+    <p>Cliquez sur "X" pour fermer ce tutoriel et commencer à utiliser l'application.</p>
+  </div>
+</div>
+
+  <script>
+
+    if (!localStorage.getItem('tutorialSeen')) {
+      // Show the tutorial modal
+      document.getElementById('tutorialModal').style.display = 'block';
+    }
+    function closeTutorial() {
+
+      localStorage.setItem('tutorialSeen', 'true');
+      
+      document.getElementById('tutorialModal').style.display = 'none';
+    }
+  </script>
+
+  
 </body>
 </html>

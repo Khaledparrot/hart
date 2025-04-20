@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Real-Time GPS Tracker</title>
+  <title>One-Time GPS Location</title>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -20,35 +20,31 @@
   <script>
     const map = L.map('map').fitWorld();
 
-    // Add OpenStreetMap tiles
+    // Add OpenStreetMap tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    let marker, accuracyCircle;
-
     function onLocationFound(e) {
+      const latlng = e.latlng;
       const radius = e.accuracy;
 
-      if (marker) {
-        marker.setLatLng(e.latlng);
-        accuracyCircle.setLatLng(e.latlng).setRadius(radius);
-      } else {
-        marker = L.marker(e.latlng).addTo(map)
-          .bindPopup("You are here").openPopup();
-        accuracyCircle = L.circle(e.latlng, radius).addTo(map);
-      }
+      L.marker(latlng).addTo(map)
+        .bindPopup("You are here").openPopup();
 
-      map.setView(e.latlng, 18);
+      L.circle(latlng, { radius }).addTo(map);
+
+      map.setView(latlng, 18); // zoom to location
     }
 
     function onLocationError(e) {
-      alert("Geolocation error: " + e.message);
+      alert("Location error: " + e.message);
     }
 
+    // Get location only once
     map.locate({
-      watch: true,
+      watch: false,
       setView: false,
       enableHighAccuracy: true
     });

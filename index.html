@@ -182,8 +182,18 @@ drawGrid();
 function askLocation() {
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(pos => {
-      map.setView([pos.coords.latitude, pos.coords.longitude], 1);
+      const userLatLng = [pos.coords.latitude, pos.coords.longitude];
+      
+      // Set the map view to the user's position
+      map.setView(userLatLng, 10);
+
+      // Add a marker at the user's position
+      L.marker(userLatLng).addTo(map)
+        .bindPopup("You are here!")
+        .openPopup();
     }, err => alert("Geolocation error: " + err.message));
+  } else {
+    alert("Geolocation is not supported by this browser.");
   }
 }
 

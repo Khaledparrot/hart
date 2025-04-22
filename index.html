@@ -8,242 +8,259 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
   <style>
-    html, body, #map { height: 100%; margin: 0; padding: 0; }
+    html, body, #map {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    #map {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    }
 
     #controls {
-      position: absolute;
+      position: fixed;
       top: 10px;
       left: 50%;
       transform: translateX(-50%);
-      z-index: 1000;
-      background: white;
-      padding: 10px;
-      border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+      z-index: 9999;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 8px 12px;
+      border-radius: 10px;
+      display: flex;
+      gap: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     }
 
     button {
-      padding: 6px 12px;
-      font-size: 14px;
-      margin: 4px;
-      border-radius: 5px;
+      padding: 6px 10px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
       background-color: #ffffff;
-      color: #555;
-      border: 1px solid #ddd;
+      color: #333;
       cursor: pointer;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-      transition: background-color 0.2s ease, border-color 0.2s ease;
+      transition: background-color 0.2s ease;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
 
-    button:hover { background-color: #f1f1f1; border-color: #555; }
-    button:active { background-color: #e6e6e6; border-color: #555; }
-    button:focus {
-      outline: none;
-      box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.5);
+    button:hover {
+      background-color: #f0f0f0;
+    }
+
+    button:active {
+      background-color: #e0e0e0;
+    }
+
+    .leaflet-control-container .leaflet-top {
+      margin-top: 60px; /* Push Leaflet controls below your fixed buttons */
     }
   </style>
 </head>
 <body>
-<div id="controls">
-  <button onclick="askLocation()"><i class="fas fa-map-marker-alt"></i></button>
-  <button onclick="showIntersections()" id="showBtn" style="display:none;"><i class="fas fa-eye"></i></button>
-  <button onclick="clearRoom()" id="clearBtn" style="display:none;"><i class="fas fa-eraser"></i></button>
-</div>
-<div id="map"></div>
+  <div id="controls">
+    <button onclick="askLocation()" title="Locate"><i class="fas fa-map-marker-alt"></i></button>
+    <button onclick="showIntersections()" id="showBtn" title="Show Intersections" style="display:none;"><i class="fas fa-eye"></i></button>
+    <button onclick="clearRoom()" id="clearBtn" title="Clear" style="display:none;"><i class="fas fa-eraser"></i></button>
+  </div>
 
-<script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-<script>
-const map = L.map('map', {
-  center: [36.709639, 3.164972],
-  zoom: 19,
-  maxZoom: 22,
-  minZoom: 2
-});
+  <div id="map"></div>
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap & CartoDB',
-  maxZoom: 22
-}).addTo(map);
-
-const refLat = 36.709639;
-const refLon = 3.164972;
-const meterToDegLat = 1 / 111320;
-function getMeterToDegLon(lat) {
-  return 1 / (111320 * Math.cos(lat * Math.PI / 180));
-}
-
-let drawnShape = null;
-const redNodes = [];
-const nodeLayer = L.layerGroup().addTo(map);
-const gridLayer = L.layerGroup().addTo(map);
-const drawnItems = new L.FeatureGroup().addTo(map);
-const distanceLayer = L.layerGroup().addTo(map);
-
-// Debounce utility
-function debounce(func, delay) {
-  let timeout;
-  return function() {
-    clearTimeout(timeout);
-    timeout = setTimeout(func, delay);
-  };
-}
-
-function drawGrid() {
-  const bounds = map.getBounds();
-  const spacingLat = 2 * meterToDegLat;
-  const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
-  const latMin = bounds.getSouth();
-  const latMax = bounds.getNorth();
-  const lonMin = bounds.getWest();
-  const lonMax = bounds.getEast();
-
-  gridLayer.clearLayers();
-  if (map.getZoom() < 20) return;
-
-  let startLat = refLat;
-  while (startLat > latMin) startLat -= spacingLat;
-  let startLon = refLon;
-  while (startLon > lonMin) startLon -= spacingLon;
-
-  for (let lat = startLat; lat <= latMax; lat += spacingLat) {
-    gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], {color: '#00ff00', weight: 0.5}));
-  }
-  for (let lon = startLon; lon <= lonMax; lon += spacingLon) {
-    gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], {color: '#00ff00', weight: 0.5}));
-  }
-}
-
-// Use debounced grid drawing
-const debouncedDrawGrid = debounce(drawGrid, 300);
-map.on('moveend zoomend', debouncedDrawGrid);
-drawGrid();
-
-function askLocation() {
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(pos => {
-      const userLatLng = [pos.coords.latitude, pos.coords.longitude];
-      map.setView(userLatLng, 18);
-      L.marker(userLatLng).addTo(map).bindPopup("You are here!").openPopup();
-      setTimeout(() => map.invalidateSize(), 200); // fix mobile resize
-    }, err => alert("Geolocation error: " + err.message), {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0
+  <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <script>
+    const map = L.map('map', {
+      center: [36.709639, 3.164972],
+      zoom: 19,
+      maxZoom: 22,
+      minZoom: 2
     });
-  } else {
-    alert("Geolocation is not supported by this browser.");
-  }
-}
 
-const drawControl = new L.Control.Draw({
-  draw: {
-    polygon: { allowIntersection: false, showArea: true },
-    polyline: false, rectangle: false, circle: false, marker: false, circlemarker: false
-  },
-  edit: { featureGroup: drawnItems, remove: true }
-});
-map.addControl(drawControl);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap & CartoDB',
+      maxZoom: 22
+    }).addTo(map);
 
-map.on('draw:created', function (e) {
-  if (drawnShape) {
-    drawnItems.clearLayers();
-    nodeLayer.clearLayers();
-    distanceLayer.clearLayers();
-  }
-  drawnShape = e.layer;
-  drawnItems.addLayer(drawnShape);
-  document.querySelector('#showBtn').style.display = 'inline';
-  document.querySelector('#clearBtn').style.display = 'inline';
-});
+    const refLat = 36.709639;
+    const refLon = 3.164972;
+    const meterToDegLat = 1 / 111320;
+    function getMeterToDegLon(lat) {
+      return 1 / (111320 * Math.cos(lat * Math.PI / 180));
+    }
 
-function pointInsidePolygon(point, polygon) {
-  let inside = false;
-  let x = point.lat, y = point.lng;
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const xi = polygon[i].lat, yi = polygon[i].lng;
-    const xj = polygon[j].lat, yj = polygon[j].lng;
-    const intersect = ((yi > y) !== (yj > y)) &&
-                      (x < (xj - xi) * (y - yi) / (yj - yi + 0.00000001) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
+    let drawnShape = null;
+    const redNodes = [];
+    const nodeLayer = L.layerGroup().addTo(map);
+    const gridLayer = L.layerGroup().addTo(map);
+    const drawnItems = new L.FeatureGroup().addTo(map);
+    const distanceLayer = L.layerGroup().addTo(map);
 
-function showIntersections() {
-  if (!drawnShape || map.getZoom() < 19) {
-    alert("Zoom in more to show intersections.");
-    return;
-  }
+    function debounce(func, delay) {
+      let timeout;
+      return function () {
+        clearTimeout(timeout);
+        timeout = setTimeout(func, delay);
+      };
+    }
 
-  nodeLayer.clearLayers();
-  distanceLayer.clearLayers();
-  redNodes.length = 0;
+    function drawGrid() {
+      const bounds = map.getBounds();
+      const spacingLat = 2 * meterToDegLat;
+      const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
+      const latMin = bounds.getSouth();
+      const latMax = bounds.getNorth();
+      const lonMin = bounds.getWest();
+      const lonMax = bounds.getEast();
 
-  const shape = drawnShape.getLatLngs()[0];
-  const bounds = drawnShape.getBounds();
-  const spacingLat = 2 * meterToDegLat;
-  const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
+      gridLayer.clearLayers();
+      if (map.getZoom() < 20) return;
 
-  let startLat = refLat;
-  while (startLat > bounds.getSouth()) startLat -= spacingLat;
-  let startLon = refLon;
-  while (startLon > bounds.getWest()) startLon -= spacingLon;
+      let startLat = refLat;
+      while (startLat > latMin) startLat -= spacingLat;
+      let startLon = refLon;
+      while (startLon > lonMin) startLon -= spacingLon;
 
-  for (let lat = startLat; lat <= bounds.getNorth(); lat += spacingLat) {
-    for (let lon = startLon; lon <= bounds.getEast(); lon += spacingLon) {
-      const point = L.latLng(lat, lon);
-      if (pointInsidePolygon(point, shape)) {
-        const red = L.circleMarker(point, {
-          color: 'red', fillColor: 'red', radius: 5, fillOpacity: 1
-        }).addTo(nodeLayer);
-        
-        red.on('click', () => {
-          distanceLayer.clearLayers();
-          drawDistancesToEdges(point, shape);
-        });
-
-        redNodes.push(red);
+      for (let lat = startLat; lat <= latMax; lat += spacingLat) {
+        gridLayer.addLayer(L.polyline([[lat, lonMin], [lat, lonMax]], { color: '#00ff00', weight: 0.5 }));
+      }
+      for (let lon = startLon; lon <= lonMax; lon += spacingLon) {
+        gridLayer.addLayer(L.polyline([[latMin, lon], [latMax, lon]], { color: '#00ff00', weight: 0.5 }));
       }
     }
-  }
-}
 
-function drawDistancesToEdges(point, shape) {
-  for (let i = 0; i < shape.length; i++) {
-    const a = shape[i];
-    const b = shape[(i + 1) % shape.length];
-    const closest = getClosestPointOnSegment(point, a, b);
+    const debouncedDrawGrid = debounce(drawGrid, 300);
+    map.on('moveend zoomend', debouncedDrawGrid);
+    drawGrid();
 
-    L.polyline([point, closest], { color: 'blue', weight: 1 }).addTo(distanceLayer);
-    const meters = map.distance(point, closest).toFixed(2);
-    L.marker(closest, {
-      icon: L.divIcon({
-        className: 'label',
-        html: `<div style="font-weight:bold;">${meters} m</div>`
-      })
-    }).addTo(distanceLayer);
-  }
-}
+    function askLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(pos => {
+          const userLatLng = [pos.coords.latitude, pos.coords.longitude];
+          map.setView(userLatLng, 18);
+          L.marker(userLatLng).addTo(map).bindPopup("You are here!").openPopup();
+          setTimeout(() => map.invalidateSize(), 200);
+        }, err => alert("Geolocation error: " + err.message), {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        });
+      } else {
+        alert("Geolocation is not supported by this browser.");
+      }
+    }
 
-function getClosestPointOnSegment(p, a, b) {
-  const ax = a.lat, ay = a.lng;
-  const bx = b.lat, by = b.lng;
-  const px = p.lat, py = p.lng;
-  const dx = bx - ax, dy = by - ay;
-  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx*dx + dy*dy)));
-  return L.latLng(ax + t * dx, ay + t * dy);
-}
+    const drawControl = new L.Control.Draw({
+      draw: {
+        polygon: { allowIntersection: false, showArea: true },
+        polyline: false, rectangle: false, circle: false, marker: false, circlemarker: false
+      },
+      edit: { featureGroup: drawnItems, remove: true }
+    });
+    map.addControl(drawControl);
 
-function clearRoom() {
-  drawnItems.clearLayers();
-  nodeLayer.clearLayers();
-  distanceLayer.clearLayers();
-  redNodes.length = 0;
-  drawnShape = null;
-  document.querySelector('#showBtn').style.display = 'none';
-  document.querySelector('#clearBtn').style.display = 'none';
-}
-</script>
+    map.on('draw:created', function (e) {
+      if (drawnShape) {
+        drawnItems.clearLayers();
+        nodeLayer.clearLayers();
+        distanceLayer.clearLayers();
+      }
+      drawnShape = e.layer;
+      drawnItems.addLayer(drawnShape);
+      document.querySelector('#showBtn').style.display = 'inline';
+      document.querySelector('#clearBtn').style.display = 'inline';
+    });
+
+    function pointInsidePolygon(point, polygon) {
+      let inside = false;
+      let x = point.lat, y = point.lng;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].lat, yi = polygon[i].lng;
+        const xj = polygon[j].lat, yj = polygon[j].lng;
+        const intersect = ((yi > y) !== (yj > y)) &&
+                          (x < (xj - xi) * (y - yi) / ((yj - yi) + 0.00000001) + xi);
+        if (intersect) inside = !inside;
+      }
+      return inside;
+    }
+
+    function showIntersections() {
+      if (!drawnShape || map.getZoom() < 19) {
+        alert("Zoom in more to show intersections.");
+        return;
+      }
+
+      nodeLayer.clearLayers();
+      distanceLayer.clearLayers();
+      redNodes.length = 0;
+
+      const shape = drawnShape.getLatLngs()[0];
+      const bounds = drawnShape.getBounds();
+      const spacingLat = 2 * meterToDegLat;
+      const spacingLon = 2.5 * getMeterToDegLon(map.getCenter().lat);
+
+      let startLat = refLat;
+      while (startLat > bounds.getSouth()) startLat -= spacingLat;
+      let startLon = refLon;
+      while (startLon > bounds.getWest()) startLon -= spacingLon;
+
+      for (let lat = startLat; lat <= bounds.getNorth(); lat += spacingLat) {
+        for (let lon = startLon; lon <= bounds.getEast(); lon += spacingLon) {
+          const point = L.latLng(lat, lon);
+          if (pointInsidePolygon(point, shape)) {
+            const red = L.circleMarker(point, {
+              color: 'red', fillColor: 'red', radius: 5, fillOpacity: 1
+            }).addTo(nodeLayer);
+
+            red.on('click', () => {
+              distanceLayer.clearLayers();
+              drawDistancesToEdges(point, shape);
+            });
+
+            redNodes.push(red);
+          }
+        }
+      }
+    }
+
+    function drawDistancesToEdges(point, shape) {
+      for (let i = 0; i < shape.length; i++) {
+        const a = shape[i];
+        const b = shape[(i + 1) % shape.length];
+        const closest = getClosestPointOnSegment(point, a, b);
+
+        L.polyline([point, closest], { color: 'blue', weight: 1 }).addTo(distanceLayer);
+        const meters = map.distance(point, closest).toFixed(2);
+        L.marker(closest, {
+          icon: L.divIcon({
+            className: 'label',
+            html: `<div style="font-weight:bold;">${meters} m</div>`
+          })
+        }).addTo(distanceLayer);
+      }
+    }
+
+    function getClosestPointOnSegment(p, a, b) {
+      const ax = a.lat, ay = a.lng;
+      const bx = b.lat, by = b.lng;
+      const px = p.lat, py = p.lng;
+      const dx = bx - ax, dy = by - ay;
+      const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+      return L.latLng(ax + t * dx, ay + t * dy);
+    }
+
+    function clearRoom() {
+      drawnItems.clearLayers();
+      nodeLayer.clearLayers();
+      distanceLayer.clearLayers();
+      redNodes.length = 0;
+      drawnShape = null;
+      document.querySelector('#showBtn').style.display = 'none';
+      document.querySelector('#clearBtn').style.display = 'none';
+    }
+  </script>
 </body>
 </html>

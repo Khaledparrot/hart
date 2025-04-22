@@ -212,8 +212,15 @@
           const point = L.latLng(lat, lon);
           if (pointInsidePolygon(point, shape)) {
             const red = L.circleMarker(point, {
-              color: 'red', fillColor: 'red', radius: 5, fillOpacity: 1
+              color: 'red',
+              fillColor: 'red',
+              radius: 6,
+              fillOpacity: 1,
+              weight: 1,
+              pane: 'markerPane', // ensures it's above polygons
+              interactive: true
             }).addTo(nodeLayer);
+            red.bringToFront();
 
             red.on('click', () => {
               distanceLayer.clearLayers();

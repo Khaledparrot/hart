@@ -269,6 +269,7 @@ function showIntersections() {
               pane: 'markerPane', // ensures it's above polygons
               interactive: true
         }).addTo(nodeLayer);
+        red.bringToFront();
         
         red.on('click', () => {
           distanceLayer.clearLayers(); // remove previous distances

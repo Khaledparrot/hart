@@ -63,7 +63,10 @@
 </head>
 <body>
   <div id="controls">
-    <button onclick="askLocation()" title="Locate"><i class="fas fa-map-marker-alt"></i></button>
+    <!--<button onclick="askLocation()" title="Locate"><i class="fas fa-map-marker-alt"></i></button>-->
+    <button id="get-location-btn" style="position: fixed; top: 10px; left: 10px; z-index: 1000;">
+  Get My Location
+</button>
     <button onclick="showIntersections()" id="showBtn" title="Show Intersections" style="display:none;"><i class="fas fa-eye"></i></button>
     <button onclick="clearRoom()" id="clearBtn" title="Clear" style="display:none;"><i class="fas fa-eraser"></i></button>
   </div>
@@ -268,6 +271,41 @@
       document.querySelector('#showBtn').style.display = 'none';
       document.querySelector('#clearBtn').style.display = 'none';
     }
+
+    function getAccurateLocationOnce() {
+  if (!navigator.geolocation) {
+    alert("Geolocation is not supported by your browser.");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(success, error, {
+    enableHighAccuracy: true,
+    timeout: 10000,
+    maximumAge: 0
+  });
+
+  function success(position) {
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+    const accuracy = position.coords.accuracy;
+
+    const userLatLng = [lat, lng];
+
+    if (accuracy <= 10) {
+      L.marker(userLatLng).addTo(map)
+        .bindPopup(`You are here<br>Accuracy: ${accuracy.toFixed(1)}m`).openPopup();
+      map.setView(userLatLng, 21); // Zoom once
+    } else {
+      alert("Could not get accurate location. Try again.");
+    }
+  }
+
+  function error(err) {
+    console.warn(`ERROR(${err.code}): ${err.message}`);
+    alert("Unable to retrieve your location.");
+  }
+}
+    document.getElementById('get-location-btn').addEventListener('click', getAccurateLocationOnce);
   </script>
 </body>
 </html>
